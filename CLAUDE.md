@@ -127,6 +127,7 @@ Table: `alert_history`
 - `GET /api/sensors`
 - `POST /api/alerts` — create alert rule
 - `GET /api/alerts?sensor_id=x`
+- `DELETE /api/alerts/{alert_id}` — soft-delete (sets active=false); frontend must use this, NOT direct Supabase write
 
 ## ESP32 Power Strategy
 - Deep sleep between readings
@@ -174,13 +175,20 @@ VITE_API_URL=
 ```
 
 ## Current Status
-- [ ] Supabase project created + schema applied
-- [ ] Backend API
-- [ ] Alert engine
-- [ ] ESP32 firmware
-- [ ] Frontend dashboard
-- [ ] Deployed to Railway/Render
+- [ ] Supabase project created + schema applied (SQL ready at docs/schema.sql)
+- [x] Backend API — FastAPI, all endpoints, Pydantic validation, CORS
+- [x] Alert engine — cooldown check, SendGrid email, alert_history logging
+- [x] ESP8266 firmware — soil_moisture.ino (NTP, D1 power control, deep sleep, POST JSON)
+- [x] Frontend dashboard — React+Vite+TS, Recharts, Supabase direct reads, alert CRUD
+- [x] Deployment config — Dockerfile + railway.toml + render.yaml (backend); vercel.json + netlify.toml (frontend)
+- [ ] Deployed to Railway/Render (configs ready — needs credentials + click Deploy)
 - [ ] Google Home (future)
+
+## Notes for Next Session
+- Supabase credentials still needed: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY
+- Run SQL schema in Supabase dashboard before first use (tables: sensors, readings, alerts, alert_history)
+- Set SENSOR_ID in firmware/soil_moisture/config.h to UUID from sensors table
+- Alert deletion uses DELETE /api/alerts/{id} — frontend calls backend, NOT Supabase directly
 ```
 
 ---

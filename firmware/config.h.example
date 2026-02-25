@@ -1,0 +1,8 @@
+// Copy this file to config.h and fill in your values
+// config.h is gitignored
+
+#define WIFI_SSID "your-wifi-ssid"
+#define WIFI_PASSWORD "your-wifi-password"
+#define API_ENDPOINT "http://your-server.com"  // no trailing slash
+#define SENSOR_ID "your-sensor-uuid"           // get from Supabase sensors table
+#define SLEEP_SECONDS 300                      // 5 minutes between readings
