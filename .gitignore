@@ -15,6 +15,9 @@ frontend/dist/
 # Arduino
 firmware/*/config.h
 
+# Logs
+*.log
+
 # Misc
 .DS_Store
 .mcp.json
