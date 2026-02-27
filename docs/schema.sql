@@ -7,6 +7,7 @@ create table if not exists sensors (
   mac_address  text unique,
   display_name text,
   location     text not null,
+  sensor_type  text, -- e.g., 'soil', 'ambient', 'all-in-one'
   created_at   timestamptz not null default now()
 );
 
@@ -43,15 +44,41 @@ create table if not exists soil_types (
   created_at timestamptz not null default now()
 );
 
+create table if not exists plant_species (
+  id                   uuid primary key default gen_random_uuid(),
+  name                 text not null unique,
+  min_temp             float,
+  max_temp             float,
+  optimal_min_temp     float,
+  optimal_max_temp     float,
+  min_humidity         float,
+  max_humidity         float,
+  optimal_min_humidity float,
+  optimal_max_humidity float,
+  min_moisture         float,
+  max_moisture         float,
+  optimal_min_moisture float,
+  optimal_max_moisture float,
+  min_light            float,
+  max_light            float,
+  optimal_min_light    float,
+  optimal_max_light    float,
+  min_co2              float,
+  max_co2              float,
+  optimal_min_co2      float,
+  optimal_max_co2      float,
+  created_at           timestamptz not null default now()
+);
+
 create table if not exists plants (
-  id            uuid primary key default gen_random_uuid(),
-  name          text not null,
-  species       text,
-  planted_date  date,
-  photo_url     text,
-  notes         text,
-  soil_type_id  uuid references soil_types(id) on delete set null,
-  created_at    timestamptz not null default now()
+  id               uuid primary key default gen_random_uuid(),
+  name             text not null,
+  planted_date     date,
+  photo_url        text,
+  notes            text,
+  soil_type_id     uuid references soil_types(id) on delete set null,
+  plant_species_id uuid references plant_species(id) on delete set null,
+  created_at       timestamptz not null default now()
 );
 
 create table if not exists sensor_plant (

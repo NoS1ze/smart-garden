@@ -3,6 +3,7 @@ export interface Sensor {
   mac_address: string;
   display_name: string | null;
   location: string;
+  sensor_type: string | null;
   created_at: string;
 }
 
@@ -14,7 +15,7 @@ export interface SoilType {
   created_at: string;
 }
 
-export interface PlantType {
+export interface PlantSpecies {
   id: string;
   name: string;
   min_temp: number | null;
@@ -43,14 +44,14 @@ export interface PlantType {
 export interface Plant {
   id: string;
   name: string;
-  plant_type_id: string | null;
+  plant_species_id: string | null;
   planted_date: string | null;
   photo_url: string | null;
   notes: string | null;
   soil_type_id: string | null;
   created_at: string;
   soil_type: SoilType | null;
-  plant_type: PlantType | null;
+  plant_species: PlantSpecies | null;
 }
 
 export interface SensorPlant {

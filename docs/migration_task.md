@@ -1,54 +1,45 @@
-# Database Migration Task
+# Database Migration Task: Renaming Plant Types to Species & Sensor Enhancements
 
-The following SQL changes are required to support the new Plant Types system.
+The following SQL changes are required to rename "Plant Types" to "Plant Species" and enhance "Sensors" management.
 
-## 1. Create `plant_types` table
+## 1. Rename `plant_types` to `plant_species`
 
 ```sql
-CREATE TABLE plant_types (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT UNIQUE NOT NULL,
-    min_temp FLOAT,
-    max_temp FLOAT,
-    optimal_min_temp FLOAT,
-    optimal_max_temp FLOAT,
-    min_humidity FLOAT,
-    max_humidity FLOAT,
-    optimal_min_humidity FLOAT,
-    optimal_max_humidity FLOAT,
-    min_moisture FLOAT,
-    max_moisture FLOAT,
-    optimal_min_moisture FLOAT,
-    optimal_max_moisture FLOAT,
-    min_light FLOAT,
-    max_light FLOAT,
-    optimal_min_light FLOAT,
-    optimal_max_light FLOAT,
-    min_co2 FLOAT,
-    max_co2 FLOAT,
-    optimal_min_co2 FLOAT,
-    optimal_max_co2 FLOAT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Rename the table
+ALTER TABLE plant_types RENAME TO plant_species;
+
+-- Rename foreign key column in plants table
+ALTER TABLE plants RENAME COLUMN plant_type_id TO plant_species_id;
 ```
 
-## 2. Update `plants` table
+## 2. Enhance `sensors` table
 
 ```sql
--- Add plant_type_id foreign key
-ALTER TABLE plants ADD COLUMN plant_type_id UUID REFERENCES plant_types(id) ON DELETE SET NULL;
+-- Add sensor_type column
+ALTER TABLE sensors ADD COLUMN sensor_type TEXT;
+```
 
--- Migrate existing species to plant_types table (optional but recommended)
-INSERT INTO plant_types (name)
-SELECT DISTINCT species FROM plants WHERE species IS NOT NULL
-ON CONFLICT (name) DO NOTHING;
+## 3. Clean up `plants` table (if `species` column still exists)
 
--- Link plants to the newly created plant_types
-UPDATE plants p
-SET plant_type_id = pt.id
-FROM plant_types pt
-WHERE p.species = pt.name;
+```sql
+-- If there is a legacy species text column, migrate it first
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='plants' AND column_name='species') THEN
+        -- Insert unique species names into plant_species table
+        INSERT INTO plant_species (name)
+        SELECT DISTINCT species FROM plants
+        WHERE species IS NOT NULL AND species <> ''
+        ON CONFLICT (name) DO NOTHING;
 
--- Remove the old species column
-ALTER TABLE plants DROP COLUMN species;
+        -- Link plants to the plant_species table
+        UPDATE plants p
+        SET plant_species_id = ps.id
+        FROM plant_species ps
+        WHERE p.species = ps.name;
+
+        -- Drop the old species column
+        ALTER TABLE plants DROP COLUMN species;
+    END IF;
+END $$;
 ```

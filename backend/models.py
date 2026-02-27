@@ -61,6 +61,7 @@ class SensorOut(BaseModel):
     mac_address: Optional[str] = None
     display_name: Optional[str] = None
     location: str
+    sensor_type: Optional[str] = None
     created_at: datetime
 
 
@@ -72,6 +73,7 @@ class SensorsListResponse(BaseModel):
 class SensorUpdate(BaseModel):
     display_name: Optional[str] = None
     location: Optional[str] = None
+    sensor_type: Optional[str] = None
 
 
 # ── Soil Types ────────────────────────────────────────────
@@ -101,9 +103,9 @@ class SoilTypesListResponse(BaseModel):
     count: int
 
 
-# ── Plant Types ───────────────────────────────────────────
+# ── Plant Species ───────────────────────────────────────────
 
-class PlantTypeCreate(BaseModel):
+class PlantSpeciesCreate(BaseModel):
     name: str
     min_temp: Optional[float] = None
     max_temp: Optional[float] = None
@@ -127,7 +129,7 @@ class PlantTypeCreate(BaseModel):
     optimal_max_co2: Optional[float] = None
 
 
-class PlantTypeUpdate(BaseModel):
+class PlantSpeciesUpdate(BaseModel):
     name: Optional[str] = None
     min_temp: Optional[float] = None
     max_temp: Optional[float] = None
@@ -151,7 +153,7 @@ class PlantTypeUpdate(BaseModel):
     optimal_max_co2: Optional[float] = None
 
 
-class PlantTypeOut(BaseModel):
+class PlantSpeciesOut(BaseModel):
     id: UUID
     name: str
     min_temp: Optional[float] = None
@@ -177,8 +179,8 @@ class PlantTypeOut(BaseModel):
     created_at: datetime
 
 
-class PlantTypesListResponse(BaseModel):
-    data: list[PlantTypeOut]
+class PlantSpeciesListResponse(BaseModel):
+    data: list[PlantSpeciesOut]
     count: int
 
 
@@ -186,7 +188,7 @@ class PlantTypesListResponse(BaseModel):
 
 class PlantCreate(BaseModel):
     name: str
-    plant_type_id: Optional[UUID] = None
+    plant_species_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -195,7 +197,7 @@ class PlantCreate(BaseModel):
 
 class PlantUpdate(BaseModel):
     name: Optional[str] = None
-    plant_type_id: Optional[UUID] = None
+    plant_species_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -205,7 +207,7 @@ class PlantUpdate(BaseModel):
 class PlantOut(BaseModel):
     id: UUID
     name: str
-    plant_type_id: Optional[UUID] = None
+    plant_species_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -213,7 +215,7 @@ class PlantOut(BaseModel):
     created_at: datetime
     sensors: list[SensorOut] = []
     soil_type: Optional[SoilTypeOut] = None
-    plant_type: Optional[PlantTypeOut] = None
+    plant_species: Optional[PlantSpeciesOut] = None
 
 
 class PlantsListResponse(BaseModel):

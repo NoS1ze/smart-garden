@@ -29,10 +29,10 @@ from models import (
     SoilTypeOut,
     SoilTypeUpdate,
     SoilTypesListResponse,
-    PlantTypeCreate,
-    PlantTypeOut,
-    PlantTypeUpdate,
-    PlantTypesListResponse,
+    PlantSpeciesCreate,
+    PlantSpeciesOut,
+    PlantSpeciesUpdate,
+    PlantSpeciesListResponse,
     StatusResponse,
 )
 
@@ -158,12 +158,7 @@ async def list_sensors():
 
 @app.put("/api/sensors/{sensor_id}", response_model=SensorOut)
 async def update_sensor(sensor_id: UUID, body: SensorUpdate):
-    updates = {}
-    if body.display_name is not None:
-        updates["display_name"] = body.display_name
-    if body.location is not None:
-        updates["location"] = body.location
-
+    updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
@@ -176,6 +171,19 @@ async def update_sensor(sensor_id: UUID, body: SensorUpdate):
     if not result.data:
         raise HTTPException(status_code=404, detail="Sensor not found")
     return SensorOut(**result.data[0])
+
+
+@app.delete("/api/sensors/{sensor_id}", response_model=StatusResponse)
+async def delete_sensor(sensor_id: UUID):
+    result = (
+        supabase.table("sensors")
+        .delete()
+        .eq("id", str(sensor_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+    return StatusResponse()
 
 
 # ── Soil Types ────────────────────────────────────────────
@@ -229,54 +237,54 @@ async def delete_soil_type(soil_type_id: UUID):
     return StatusResponse()
 
 
-# ── Plant Types ───────────────────────────────────────────
+# ── Plant Species ───────────────────────────────────────────
 
 
-@app.get("/api/plant-types", response_model=PlantTypesListResponse)
-async def list_plant_types():
-    result = supabase.table("plant_types").select("*").order("name").execute()
+@app.get("/api/plant-species", response_model=PlantSpeciesListResponse)
+async def list_plant_species():
+    result = supabase.table("plant_species").select("*").order("name").execute()
     data = result.data or []
-    return PlantTypesListResponse(
-        data=[PlantTypeOut(**row) for row in data],
+    return PlantSpeciesListResponse(
+        data=[PlantSpeciesOut(**row) for row in data],
         count=len(data),
     )
 
 
-@app.post("/api/plant-types", response_model=PlantTypeOut, status_code=201)
-async def create_plant_type(body: PlantTypeCreate):
+@app.post("/api/plant-species", response_model=PlantSpeciesOut, status_code=201)
+async def create_plant_species(body: PlantSpeciesCreate):
     row = body.model_dump()
-    result = supabase.table("plant_types").insert(row).execute()
+    result = supabase.table("plant_species").insert(row).execute()
     if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to create plant type")
-    return PlantTypeOut(**result.data[0])
+        raise HTTPException(status_code=500, detail="Failed to create plant species")
+    return PlantSpeciesOut(**result.data[0])
 
 
-@app.put("/api/plant-types/{plant_type_id}", response_model=PlantTypeOut)
-async def update_plant_type(plant_type_id: UUID, body: PlantTypeUpdate):
+@app.put("/api/plant-species/{plant_species_id}", response_model=PlantSpeciesOut)
+async def update_plant_species(plant_species_id: UUID, body: PlantSpeciesUpdate):
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     result = (
-        supabase.table("plant_types")
+        supabase.table("plant_species")
         .update(updates)
-        .eq("id", str(plant_type_id))
+        .eq("id", str(plant_species_id))
         .execute()
     )
     if not result.data:
-        raise HTTPException(status_code=404, detail="Plant type not found")
-    return PlantTypeOut(**result.data[0])
+        raise HTTPException(status_code=404, detail="Plant species not found")
+    return PlantSpeciesOut(**result.data[0])
 
 
-@app.delete("/api/plant-types/{plant_type_id}", response_model=StatusResponse)
-async def delete_plant_type(plant_type_id: UUID):
+@app.delete("/api/plant-species/{plant_species_id}", response_model=StatusResponse)
+async def delete_plant_species(plant_species_id: UUID):
     result = (
-        supabase.table("plant_types")
+        supabase.table("plant_species")
         .delete()
-        .eq("id", str(plant_type_id))
+        .eq("id", str(plant_species_id))
         .execute()
     )
     if not result.data:
-        raise HTTPException(status_code=404, detail="Plant type not found")
+        raise HTTPException(status_code=404, detail="Plant species not found")
     return StatusResponse()
 
 
@@ -284,7 +292,7 @@ async def delete_plant_type(plant_type_id: UUID):
 
 
 def _enrich_plant(plant_row: dict, sensors: list[SensorOut]) -> PlantOut:
-    """Build a PlantOut with nested soil_type and plant_type if IDs are set."""
+    """Build a PlantOut with nested soil_type and plant_species if IDs are set."""
     soil_type = None
     if plant_row.get("soil_type_id"):
         st_result = (
@@ -297,19 +305,19 @@ def _enrich_plant(plant_row: dict, sensors: list[SensorOut]) -> PlantOut:
         if st_result.data:
             soil_type = SoilTypeOut(**st_result.data)
 
-    plant_type = None
-    if plant_row.get("plant_type_id"):
-        pt_result = (
-            supabase.table("plant_types")
+    plant_species = None
+    if plant_row.get("plant_species_id"):
+        ps_result = (
+            supabase.table("plant_species")
             .select("*")
-            .eq("id", plant_row["plant_type_id"])
+            .eq("id", plant_row["plant_species_id"])
             .maybe_single()
             .execute()
         )
-        if pt_result.data:
-            plant_type = PlantTypeOut(**pt_result.data)
+        if ps_result.data:
+            plant_species = PlantSpeciesOut(**ps_result.data)
 
-    return PlantOut(**plant_row, sensors=sensors, soil_type=soil_type, plant_type=plant_type)
+    return PlantOut(**plant_row, sensors=sensors, soil_type=soil_type, plant_species=plant_species)
 
 
 def _get_plant_sensors(plant_id: str) -> list[SensorOut]:
@@ -367,8 +375,8 @@ async def create_plant(body: PlantCreate):
         row["planted_date"] = row["planted_date"].isoformat()
     if "soil_type_id" in row:
         row["soil_type_id"] = str(row["soil_type_id"])
-    if "plant_type_id" in row:
-        row["plant_type_id"] = str(row["plant_type_id"])
+    if "plant_species_id" in row:
+        row["plant_species_id"] = str(row["plant_species_id"])
     result = supabase.table("plants").insert(row).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create plant")
@@ -384,8 +392,8 @@ async def update_plant(plant_id: UUID, body: PlantUpdate):
         updates["planted_date"] = updates["planted_date"].isoformat()
     if "soil_type_id" in updates and updates["soil_type_id"] is not None:
         updates["soil_type_id"] = str(updates["soil_type_id"])
-    if "plant_type_id" in updates and updates["plant_type_id"] is not None:
-        updates["plant_type_id"] = str(updates["plant_type_id"])
+    if "plant_species_id" in updates and updates["plant_species_id"] is not None:
+        updates["plant_species_id"] = str(updates["plant_species_id"])
 
     result = (
         supabase.table("plants")

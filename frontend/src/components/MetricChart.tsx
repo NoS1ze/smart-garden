@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label
 } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { Reading, Metric, METRICS, SoilType, PlantType } from '../types';
+import { Reading, Metric, METRICS, SoilType, PlantSpecies } from '../types';
 import { rawToPercent } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
@@ -11,10 +11,10 @@ type Range = '24h' | '7d' | '30d' | 'custom';
 interface Props {
   sensorId: string;
   soilType?: SoilType | null;
-  plantType?: PlantType | null;
+  plantSpecies?: PlantSpecies | null;
 }
 
-export function MetricChart({ sensorId, soilType, plantType }: Props) {
+export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
   const [range, setRange] = useState<Range>('24h');
@@ -124,7 +124,7 @@ export function MetricChart({ sensorId, soilType, plantType }: Props) {
   }));
 
   const getReferenceLines = () => {
-    if (!plantType) return null;
+    if (!plantSpecies) return null;
 
     let prefix = '';
     switch(metric) {
@@ -135,10 +135,10 @@ export function MetricChart({ sensorId, soilType, plantType }: Props) {
       case 'co2_ppm': prefix = 'co2'; break;
     }
 
-    const min = plantType[`min_${prefix}` as keyof PlantType] as number;
-    const max = plantType[`max_${prefix}` as keyof PlantType] as number;
-    const optMin = plantType[`optimal_min_${prefix}` as keyof PlantType] as number;
-    const optMax = plantType[`optimal_max_${prefix}` as keyof PlantType] as number;
+    const min = plantSpecies[`min_${prefix}` as keyof PlantSpecies] as number;
+    const max = plantSpecies[`max_${prefix}` as keyof PlantSpecies] as number;
+    const optMin = plantSpecies[`optimal_min_${prefix}` as keyof PlantSpecies] as number;
+    const optMax = plantSpecies[`optimal_max_${prefix}` as keyof PlantSpecies] as number;
 
     return (
       <>
