@@ -163,9 +163,34 @@ Returns the updated sensor object (same schema as GET /api/sensors items).
 
 ---
 
+## GET /api/plant-types
+
+List all plant types and their requirements.
+
+### Success Response — 200 OK
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Monstera",
+      "min_temp": 15.0,
+      "max_temp": 30.0,
+      "optimal_min_temp": 20.0,
+      "optimal_max_temp": 25.0,
+      "created_at": "2024-02-20T08:00:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
 ## GET /api/plants
 
-List all plants with their associated sensors.
+List all plants with their associated sensors and types.
 
 ### Success Response — 200 OK
 
@@ -175,7 +200,7 @@ List all plants with their associated sensors.
     {
       "id": "uuid",
       "name": "Tomato Plant",
-      "species": "Solanum lycopersicum",
+      "plant_type_id": "uuid",
       "planted_date": "2024-03-01",
       "photo_url": "https://example.com/tomato.jpg",
       "notes": "Needs lots of sun",
@@ -200,12 +225,13 @@ List all plants with their associated sensors.
 |-------|------|-------------|
 | `data[].id` | string (UUID) | Plant PK |
 | `data[].name` | string | Plant name |
-| `data[].species` | string or null | Botanical species |
+| `data[].plant_type_id` | string (UUID) or null | Associated plant type |
 | `data[].planted_date` | string (date) or null | When it was planted |
 | `data[].photo_url` | string or null | URL to plant image |
 | `data[].notes` | string or null | Freeform notes |
 | `data[].created_at` | string (ISO 8601) | Record creation time |
 | `data[].sensors` | array | List of associated sensor objects |
+| `data[].plant_type` | object or null | Nested plant type object |
 | `count` | integer | Number of plants returned |
 
 ---
@@ -219,7 +245,7 @@ Create a new plant.
 ```json
 {
   "name": "Tomato Plant",
-  "species": "Solanum lycopersicum",
+  "plant_type_id": "uuid",
   "planted_date": "2024-03-01",
   "photo_url": "https://example.com/tomato.jpg",
   "notes": "Needs lots of sun"
@@ -229,7 +255,7 @@ Create a new plant.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Plant name |
-| `species` | string | no | Botanical species |
+| `plant_type_id` | string (UUID) | no | Associated plant type ID |
 | `planted_date` | string (date) | no | When planted (YYYY-MM-DD) |
 | `photo_url` | string | no | URL to plant image |
 | `notes` | string | no | Freeform notes |

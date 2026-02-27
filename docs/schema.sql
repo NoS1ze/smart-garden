@@ -43,10 +43,36 @@ create table if not exists soil_types (
   created_at timestamptz not null default now()
 );
 
+create table if not exists plant_types (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null unique,
+  min_temp     float,
+  max_temp     float,
+  optimal_min_temp float,
+  optimal_max_temp float,
+  min_humidity float,
+  max_humidity float,
+  optimal_min_humidity float,
+  optimal_max_humidity float,
+  min_moisture float,
+  max_moisture float,
+  optimal_min_moisture float,
+  optimal_max_moisture float,
+  min_light    float,
+  max_light    float,
+  optimal_min_light float,
+  optimal_max_light float,
+  min_co2      float,
+  max_co2      float,
+  optimal_min_co2 float,
+  optimal_max_co2 float,
+  created_at   timestamptz not null default now()
+);
+
 create table if not exists plants (
   id            uuid primary key default gen_random_uuid(),
   name          text not null,
-  species       text,
+  plant_type_id uuid references plant_types(id) on delete set null,
   planted_date  date,
   photo_url     text,
   notes         text,
