@@ -129,10 +129,35 @@ Table: `soil_types`
 - raw_wet (int, default 400) — raw ADC value when wet
 - created_at (timestamp)
 
+Table: `plant_types`
+- id (uuid, primary key)
+- name (text, unique, not null)
+- min_temp (float)
+- max_temp (float)
+- optimal_min_temp (float)
+- optimal_max_temp (float)
+- min_humidity (float)
+- max_humidity (float)
+- optimal_min_humidity (float)
+- optimal_max_humidity (float)
+- min_moisture (float)
+- max_moisture (float)
+- optimal_min_moisture (float)
+- optimal_max_moisture (float)
+- min_light (float)
+- max_light (float)
+- optimal_min_light (float)
+- optimal_max_light (float)
+- min_co2 (float)
+- max_co2 (float)
+- optimal_min_co2 (float)
+- optimal_max_co2 (float)
+- created_at (timestamp)
+
 Table: `plants`
 - id (uuid, primary key)
 - name (text, not null)
-- species (text)
+- plant_type_id (uuid, FK → plant_types.id, ON DELETE SET NULL)
 - planted_date (date)
 - photo_url (text) — URL to plant image, not binary
 - notes (text)
@@ -177,11 +202,17 @@ Table: `sensor_plant` (junction table)
 - `PUT /api/soil-types/{id}` — update name/raw_dry/raw_wet
 - `DELETE /api/soil-types/{id}` — delete soil type (plants revert to default calibration)
 
+### Plant Types
+- `GET /api/plant-types` — list all plant types
+- `POST /api/plant-types` — create {name, ...ranges}
+- `PUT /api/plant-types/{id}` — update
+- `DELETE /api/plant-types/{id}`
+
 ### Plants
-- `GET /api/plants` — list all plants with nested sensors and soil_type
-- `GET /api/plants/{plant_id}` — single plant with nested sensors and soil_type
-- `POST /api/plants` — create plant {name, species?, planted_date?, photo_url?, notes?, soil_type_id?}
-- `PUT /api/plants/{plant_id}` — update plant fields including soil_type_id
+- `GET /api/plants` — list all plants with nested sensors, soil_type, and plant_type
+- `GET /api/plants/{plant_id}` — single plant with nested sensors, soil_type, and plant_type
+- `POST /api/plants` — create plant {name, plant_type_id?, planted_date?, photo_url?, notes?, soil_type_id?}
+- `PUT /api/plants/{plant_id}` — update plant fields including soil_type_id and plant_type_id
 - `DELETE /api/plants/{plant_id}` — delete plant (cascade deletes sensor_plant associations)
 - `POST /api/plants/{plant_id}/sensors` — associate sensor {sensor_id}
 - `DELETE /api/plants/{plant_id}/sensors/{sensor_id}` — unassociate sensor

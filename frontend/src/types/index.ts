@@ -14,16 +14,43 @@ export interface SoilType {
   created_at: string;
 }
 
+export interface PlantType {
+  id: string;
+  name: string;
+  min_temp: number | null;
+  max_temp: number | null;
+  optimal_min_temp: number | null;
+  optimal_max_temp: number | null;
+  min_humidity: number | null;
+  max_humidity: number | null;
+  optimal_min_humidity: number | null;
+  optimal_max_humidity: number | null;
+  min_moisture: number | null;
+  max_moisture: number | null;
+  optimal_min_moisture: number | null;
+  optimal_max_moisture: number | null;
+  min_light: number | null;
+  max_light: number | null;
+  optimal_min_light: number | null;
+  optimal_max_light: number | null;
+  min_co2: number | null;
+  max_co2: number | null;
+  optimal_min_co2: number | null;
+  optimal_max_co2: number | null;
+  created_at: string;
+}
+
 export interface Plant {
   id: string;
   name: string;
-  species: string | null;
+  plant_type_id: string | null;
   planted_date: string | null;
   photo_url: string | null;
   notes: string | null;
   soil_type_id: string | null;
   created_at: string;
   soil_type: SoilType | null;
+  plant_type: PlantType | null;
 }
 
 export interface SensorPlant {

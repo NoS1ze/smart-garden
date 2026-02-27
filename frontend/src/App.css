@@ -275,6 +275,97 @@ header h1 {
   font-family: inherit;
 }
 
+/* Plant Type Manager */
+.plant-type-form-large {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.range-inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.metric-range-group {
+  background: #222;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.metric-range-group h4 {
+  margin-bottom: 8px;
+  color: #4ade80;
+  font-size: 0.85rem;
+}
+
+.range-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.range-row label {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.range-row input {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  padding: 4px 6px;
+  font-size: 0.8rem;
+}
+
+.plant-type-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.plant-type-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.ranges-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.summary-item {
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+.summary-label {
+  color: #666;
+  margin-right: 4px;
+  text-transform: capitalize;
+}
+
+.summary-values {
+  font-family: monospace;
+}
+
+.plant-type-edit-mode .name-edit {
+  font-size: 1.1rem;
+  font-weight: bold;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .plant-form textarea,
 .plant-edit-form textarea {
   resize: vertical;
