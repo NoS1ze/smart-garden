@@ -253,7 +253,7 @@ VITE_API_URL=
 - [x] Feature: Soil type calibration system (soil_types table, per-plant association, frontend conversion)
 - [x] Data migration: convert existing readings percentage→raw
 - [x] Firmware reflash: send raw ADC values instead of percentages
-- [ ] Deployed to Railway/Render
+- [x] Deployed to AWS Lightsail VPS (18.171.135.9) — nginx + systemd + uvicorn
 - [ ] Google Home (future)
 
 ## Firmware Deployment
@@ -261,7 +261,7 @@ VITE_API_URL=
 - Board: NodeMCU V3 on `/dev/cu.wchusbserial10` (CH340 USB-serial)
 - ESP8266 core `esp8266:esp8266` v3.1.2 installed
 - FQBN: `esp8266:esp8266:nodemcuv2`
-- Firmware source: `/Volumes/T7/Projects/Garden/smart-garden-firmware/firmware/soil_moisture/`
+- Firmware source: `firmware/soil_moisture/` (in this repo)
 - `config.h` lives in the sketch directory (gitignored) — contains WiFi creds, API endpoint, OTA password
 - Compile: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 /path/to/soil_moisture`
 - Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial10 /path/to/soil_moisture`
@@ -273,85 +273,12 @@ VITE_API_URL=
 - Supabase project ref: snmhepqybhjuzoavefyr
 - Alert deletion uses DELETE /api/alerts/{id} — frontend calls backend, NOT Supabase directly
 - POST /api/readings now uses "mac" field instead of "sensor_id" — breaking change, firmware already reflashed
-```
 
----
-
-And here are the updated agent prompts:
-
----
-
-**Terminal 1 — Backend Agent**
-```
-Read CLAUDE.md thoroughly. You are Agent 1 (backend).
-
-First create /docs/api-spec.md with full request/response 
-JSON schemas for all endpoints.
-
-Then build the FastAPI backend in /backend:
-- Supabase integration using supabase-py
-- POST /api/readings endpoint — validate with Pydantic, 
-  save all metrics from one ESP32 wake cycle in bulk
-- GET endpoints for readings and sensors
-- Alert engine: after each POST, check alert rules for 
-  that sensor, send email via SendGrid if threshold breached,
-  respect 1 hour cooldown between same alert
-- .env.example file with all required variables
-- README with setup instructions
-
-Do not touch /frontend or /firmware.
-Commit after each major piece.
-```
-
----
-
-**Terminal 2 — Frontend Agent**
-```
-Read CLAUDE.md thoroughly. You are Agent 2 (frontend).
-
-Check if /docs/api-spec.md exists first. If not, wait 
-and tell me — do not proceed without it.
-
-Build React dashboard in /frontend:
-- Connect directly to Supabase using anon key for reads
-- Sensor selector dropdown
-- Metric tabs: temperature, humidity, soil moisture, light, CO2
-- Recharts line chart with date range picker for each metric
-- Alerts panel: view/create/delete alert rules per sensor
-- Alert history table
-- Auto-refresh every 60 seconds
-- .env.example with required variables
-
-Do not touch /backend or /firmware.
-Commit after each major piece.
-```
-
----
-
-**Terminal 3 — Firmware Agent**
-```
-Read CLAUDE.md thoroughly. You are Agent 3 (firmware).
-
-Build ESP32 Arduino firmware in /firmware:
-
-- firmware/combined/combined.ino — main sketch, all sensors
-- firmware/temperature_humidity/  — DHT22 only
-- firmware/soil_moisture/         — analog moisture only  
-- firmware/light/                 — BH1750 only
-- firmware/co2/                   — MH-Z19 only
-- firmware/config.h.example       — WiFi, API endpoint, sensor_id, sleep interval
-
-Each sketch must:
-- Wake from deep sleep
-- Connect WiFi with 10 second timeout (if fail, go back to sleep)
-- Read all available sensors
-- POST single JSON request to /api/readings with all metrics
-- Print to Serial for debugging
-- Go back to deep sleep
-
-Combined sketch posts ALL metrics in one request.
-Include wiring diagram as comments at top of each file.
-Include required libraries in a comment (for Arduino Library Manager).
-
-Do not touch /backend or /frontend.
-Commit after each sensor type is done.
+## VPS Deployment (AWS Lightsail)
+- **Server**: 18.171.135.9 (Ubuntu 22.04, eu-west-2)
+- **SSH**: `ssh -i ~/.ssh/lightsail-eu-west-2.pem ubuntu@18.171.135.9`
+- **Deploy script**: `./deploy-server.sh` (run from project root on Mac)
+- **Frontend**: http://18.171.135.9/ — nginx serves static build from `/opt/smart-garden/frontend/dist`
+- **Backend API**: http://18.171.135.9/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
+- **systemd service**: `smart-garden` — auto-restarts, env from `/opt/smart-garden/backend/.env`
+- **VITE_API_URL**: must be `http://18.171.135.9` (no `/api` suffix — code already prepends `/api/`)
