@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { SoilType, PlantType } from '../types';
+import { SoilType, PlantSpecies } from '../types';
 
 interface Props {
   onCreated: () => void;
@@ -8,13 +8,13 @@ interface Props {
 
 export function AddPlantForm({ onCreated, onCancel }: Props) {
   const [name, setName] = useState('');
-  const [plantTypeId, setPlantTypeId] = useState('');
+  const [plantSpeciesId, setPlantSpeciesId] = useState('');
   const [plantedDate, setPlantedDate] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [soilTypeId, setSoilTypeId] = useState('');
   const [soilTypes, setSoilTypes] = useState<SoilType[]>([]);
-  const [plantTypes, setPlantTypes] = useState<PlantType[]>([]);
+  const [plantSpecies, setPlantSpecies] = useState<PlantSpecies[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,9 +26,9 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
       .then((body) => setSoilTypes(body.data ?? []))
       .catch(() => {});
 
-    fetch(`${apiUrl}/api/plant-types`)
+    fetch(`${apiUrl}/api/plant-species`)
       .then((res) => res.json())
-      .then((body) => setPlantTypes(body.data ?? []))
+      .then((body) => setPlantSpecies(body.data ?? []))
       .catch(() => {});
   }, [apiUrl]);
 
@@ -41,7 +41,7 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
 
     try {
       const body: Record<string, string> = { name: name.trim() };
-      if (plantTypeId) body.plant_type_id = plantTypeId;
+      if (plantSpeciesId) body.plant_species_id = plantSpeciesId;
       if (plantedDate) body.planted_date = plantedDate;
       if (photoUrl.trim()) body.photo_url = photoUrl.trim();
       if (notes.trim()) body.notes = notes.trim();
@@ -83,12 +83,12 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
             />
           </label>
           <label>
-            Plant Type
-            <select value={plantTypeId} onChange={(e) => setPlantTypeId(e.target.value)}>
+            Plant Species
+            <select value={plantSpeciesId} onChange={(e) => setPlantSpeciesId(e.target.value)}>
               <option value="">None</option>
-              {plantTypes.map((pt) => (
-                <option key={pt.id} value={pt.id}>
-                  {pt.name}
+              {plantSpecies.map((ps) => (
+                <option key={ps.id} value={ps.id}>
+                  {ps.name}
                 </option>
               ))}
             </select>

@@ -10,10 +10,105 @@ body {
   color: #e0e0e0;
 }
 
-.app {
+/* Sidebar Layout */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: #1a1a1a;
+  border-right: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 24px;
+  border-bottom: 1px solid #2a2a2a;
+  cursor: pointer;
+}
+
+.sidebar-header h1 {
+  font-size: 1.25rem;
+  color: #4ade80;
+  white-space: nowrap;
+}
+
+.nav-links {
+  list-style: none;
+  padding: 16px 0;
+}
+
+.nav-links li {
+  padding: 12px 24px;
+  cursor: pointer;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s;
+}
+
+.nav-links li:hover {
+  background: #222;
+  color: #e0e0e0;
+}
+
+.nav-links li.active {
+  background: #222;
+  color: #4ade80;
+  border-left: 3px solid #4ade80;
+}
+
+.nav-links .icon {
+  font-size: 1.2rem;
+}
+
+.content {
+  flex: 1;
+  padding: 24px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  width: 100%;
+}
+
+.mobile-header {
+  display: none;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .nav-links {
+    display: flex;
+    overflow-x: auto;
+    padding: 0;
+  }
+  .nav-links li {
+    padding: 12px 16px;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+  }
+  .nav-links li.active {
+    border-left: none;
+    border-bottom: 3px solid #4ade80;
+  }
+}
+
+/* Original Styles Adaptations */
+.app {
+  /* removed max-width/padding as it's now in .content */
 }
 
 header {
@@ -51,7 +146,7 @@ header h1 {
   gap: 20px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .plant-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -262,7 +357,9 @@ header h1 {
 .plant-form input,
 .plant-form textarea,
 .plant-edit-form input,
-.plant-edit-form textarea {
+.plant-edit-form textarea,
+.form-group input,
+.form-group select {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -273,6 +370,17 @@ header h1 {
   padding: 8px 10px;
   font-size: 0.9rem;
   font-family: inherit;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: #888;
+  margin-bottom: 4px;
+  display: block;
 }
 
 /* Plant Type Manager */
@@ -375,6 +483,69 @@ header h1 {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* ---- Sensor Manager ---- */
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.sensor-manage-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.sensor-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.sensor-type-icon {
+  font-size: 2rem;
+  background: #222;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.sensor-ident h3 {
+  font-size: 1.1rem;
+  color: #e0e0e0;
+}
+
+.sensor-ident code {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.sensor-details {
+  font-size: 0.9rem;
+  color: #aaa;
+  margin-bottom: 16px;
+}
+
+.sensor-details p {
+  margin-bottom: 4px;
+}
+
+.sensor-date {
+  font-size: 0.75rem;
+  color: #555;
+  margin-top: 8px;
+}
+
+.sensor-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---- Plant Detail ---- */

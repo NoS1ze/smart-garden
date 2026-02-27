@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { PlantType, METRICS } from '../types';
+import { PlantSpecies, METRICS } from '../types';
 
 const apiUrl = import.meta.env.VITE_API_URL || '';
 
-export function PlantTypeManager() {
-  const [plantTypes, setPlantTypes] = useState<PlantType[]>([]);
+export function PlantSpeciesManager() {
+  const [plantSpecies, setPlantSpecies] = useState<PlantSpecies[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Add form
@@ -20,12 +20,12 @@ export function PlantTypeManager() {
 
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPlantTypes = useCallback(async () => {
+  const fetchPlantSpecies = useCallback(async () => {
     try {
-      const res = await fetch(`${apiUrl}/api/plant-types`);
-      if (!res.ok) throw new Error('Failed to fetch plant types');
+      const res = await fetch(`${apiUrl}/api/plant-species`);
+      if (!res.ok) throw new Error('Failed to fetch plant species');
       const body = await res.json();
-      setPlantTypes(body.data ?? []);
+      setPlantSpecies(body.data ?? []);
     } catch (e: any) {
       setError(e.message);
     }
@@ -33,8 +33,8 @@ export function PlantTypeManager() {
   }, []);
 
   useEffect(() => {
-    fetchPlantTypes();
-  }, [fetchPlantTypes]);
+    fetchPlantSpecies();
+  }, [fetchPlantSpecies]);
 
   const handleAdd = async () => {
     if (!addName.trim()) return;
@@ -46,19 +46,19 @@ export function PlantTypeManager() {
         if (val.trim() !== '') body[key] = parseFloat(val);
       });
 
-      const res = await fetch(`${apiUrl}/api/plant-types`, {
+      const res = await fetch(`${apiUrl}/api/plant-species`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Failed to create plant type');
+        throw new Error(data.detail || 'Failed to create plant species');
       }
       setShowAdd(false);
       setAddName('');
       setAddRanges({});
-      fetchPlantTypes();
+      fetchPlantSpecies();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -74,40 +74,40 @@ export function PlantTypeManager() {
         body[key] = val.trim() !== '' ? parseFloat(val) : null;
       });
 
-      const res = await fetch(`${apiUrl}/api/plant-types/${id}`, {
+      const res = await fetch(`${apiUrl}/api/plant-species/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Failed to update plant type');
+        throw new Error(data.detail || 'Failed to update plant species');
       }
       setEditingId(null);
-      fetchPlantTypes();
+      fetchPlantSpecies();
     } catch (e: any) {
       setError(e.message);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this plant type?')) return;
+    if (!confirm('Delete this plant species?')) return;
     setError(null);
     try {
-      const res = await fetch(`${apiUrl}/api/plant-types/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${apiUrl}/api/plant-species/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Failed to delete plant type');
+        throw new Error(data.detail || 'Failed to delete plant species');
       }
-      fetchPlantTypes();
+      fetchPlantSpecies();
     } catch (e: any) {
       setError(e.message);
     }
   };
 
-  const startEdit = (pt: PlantType) => {
-    setEditingId(pt.id);
-    setEditName(pt.name);
+  const startEdit = (ps: PlantSpecies) => {
+    setEditingId(ps.id);
+    setEditName(ps.name);
     const ranges: Record<string, string> = {};
     const suffixes = ['min_temp', 'max_temp', 'optimal_min_temp', 'optimal_max_temp',
                       'min_humidity', 'max_humidity', 'optimal_min_humidity', 'optimal_max_humidity',
@@ -115,7 +115,7 @@ export function PlantTypeManager() {
                       'min_light', 'max_light', 'optimal_min_light', 'optimal_max_light',
                       'min_co2', 'max_co2', 'optimal_min_co2', 'optimal_max_co2'];
     suffixes.forEach(s => {
-      ranges[s] = pt[s as keyof PlantType] !== null ? String(pt[s as keyof PlantType]) : '';
+      ranges[s] = ps[s as keyof PlantSpecies] !== null ? String(ps[s as keyof PlantSpecies]) : '';
     });
     setEditRanges(ranges);
   };
@@ -146,14 +146,14 @@ export function PlantTypeManager() {
     );
   };
 
-  if (loading) return <p className="status">Loading plant types...</p>;
+  if (loading) return <p className="status">Loading plant species...</p>;
 
   return (
     <div className="plant-type-manager">
       <div className="dashboard-header">
-        <h2>Plant Types</h2>
+        <h2>Plant Species</h2>
         <button className="btn-primary" onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? 'Cancel' : '+ Add Plant Type'}
+          {showAdd ? 'Cancel' : '+ Add Plant Species'}
         </button>
       </div>
 
@@ -173,41 +173,41 @@ export function PlantTypeManager() {
           </div>
           {renderRangeInputs(addRanges, setAddRanges)}
           <button className="btn-primary" onClick={handleAdd} disabled={submitting || !addName.trim()}>
-            {submitting ? 'Creating...' : 'Create Plant Type'}
+            {submitting ? 'Creating...' : 'Create Plant Species'}
           </button>
         </div>
       )}
 
       <div className="plant-types-list">
-        {plantTypes.length === 0 ? (
-          <p className="status">No plant types defined yet.</p>
+        {plantSpecies.length === 0 ? (
+          <p className="status">No plant species defined yet.</p>
         ) : (
-          plantTypes.map((pt) => (
-            <div key={pt.id} className="plant-type-card">
-              {editingId === pt.id ? (
+          plantSpecies.map((ps) => (
+            <div key={ps.id} className="plant-type-card">
+              {editingId === ps.id ? (
                 <div className="plant-type-edit-mode">
                   <input value={editName} onChange={(e) => setEditName(e.target.value)} className="name-edit" />
                   {renderRangeInputs(editRanges, setEditRanges)}
                   <div className="form-actions">
-                    <button className="btn-small btn-primary" onClick={() => handleEdit(pt.id)}>Save</button>
+                    <button className="btn-small btn-primary" onClick={() => handleEdit(ps.id)}>Save</button>
                     <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="plant-type-card-header">
-                    <h3>{pt.name}</h3>
+                    <h3>{ps.name}</h3>
                     <div className="actions">
-                      <button className="btn-small btn-secondary" onClick={() => startEdit(pt)}>Edit</button>
-                      <button className="btn-small delete-btn" onClick={() => handleDelete(pt.id)}>Delete</button>
+                      <button className="btn-small btn-secondary" onClick={() => startEdit(ps)}>Edit</button>
+                      <button className="btn-small delete-btn" onClick={() => handleDelete(ps.id)}>Delete</button>
                     </div>
                   </div>
                   <div className="ranges-summary">
                     {['temp', 'humidity', 'moisture', 'light', 'co2'].map(m => {
-                      const min = pt[`min_${m}` as keyof PlantType];
-                      const max = pt[`max_${m}` as keyof PlantType];
-                      const optMin = pt[`optimal_min_${m}` as keyof PlantType];
-                      const optMax = pt[`optimal_max_${m}` as keyof PlantType];
+                      const min = ps[`min_${m}` as keyof PlantSpecies];
+                      const max = ps[`max_${m}` as keyof PlantSpecies];
+                      const optMin = ps[`optimal_min_${m}` as keyof PlantSpecies];
+                      const optMax = ps[`optimal_max_${m}` as keyof PlantSpecies];
                       if (min === null && max === null && optMin === null && optMax === null) return null;
                       return (
                         <div key={m} className="summary-item">
