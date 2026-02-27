@@ -2,10 +2,12 @@
 -- Run this in your Supabase project: Dashboard → SQL Editor → New query → paste → Run
 
 create table if not exists sensors (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  location    text not null,
-  created_at  timestamptz not null default now()
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  mac_address  text unique,
+  display_name text,
+  location     text not null,
+  created_at   timestamptz not null default now()
 );
 
 create table if not exists readings (
@@ -33,11 +35,33 @@ create table if not exists alert_history (
   value_at_trigger float not null
 );
 
--- Index for common query patterns
+create table if not exists soil_types (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null unique,
+  raw_dry    int not null default 800,
+  raw_wet    int not null default 400,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists plants (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  species       text,
+  planted_date  date,
+  photo_url     text,
+  notes         text,
+  soil_type_id  uuid references soil_types(id) on delete set null,
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists sensor_plant (
+  sensor_id   uuid not null references sensors(id) on delete cascade,
+  plant_id    uuid not null references plants(id) on delete cascade,
+  assigned_at timestamptz not null default now(),
+  primary key (sensor_id, plant_id)
+);
+
+-- Indexes for common query patterns
 create index if not exists readings_sensor_metric_time on readings (sensor_id, metric, recorded_at desc);
 create index if not exists alerts_sensor_active on alerts (sensor_id, active);
 create index if not exists alert_history_alert_time on alert_history (alert_id, triggered_at desc);
-
--- Insert a test sensor to get started (replace name/location as needed)
--- insert into sensors (name, location) values ('Garden Bed A', 'Backyard');
--- After inserting, copy the generated UUID into firmware/soil_moisture/config.h as SENSOR_ID

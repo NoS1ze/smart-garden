@@ -18,7 +18,7 @@ export function SensorSelector({ sensors, selected, onSelect }: Props) {
         <option value="" disabled>Select a sensor</option>
         {sensors.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name} — {s.location}
+            {s.display_name || s.mac_address} — {s.location}
           </option>
         ))}
       </select>

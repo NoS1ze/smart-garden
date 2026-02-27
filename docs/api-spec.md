@@ -8,26 +8,26 @@ All responses use `Content-Type: application/json`.
 
 ## POST /api/readings
 
-Ingest sensor readings from an ESP8266 device.
+Ingest sensor readings from an ESP8266 device. The sensor is identified by its WiFi MAC address. If the MAC is not yet registered, the backend auto-creates a new sensor entry.
 
 ### Request Body
 
 ```json
 {
-  "sensor_id": "string (UUID)",
+  "mac": "8C:CE:4E:CE:66:15",
   "readings": [
     {
-      "metric": "string",
-      "value": "number (float)"
+      "metric": "soil_moisture",
+      "value": 45.0
     }
   ],
-  "recorded_at": "integer (Unix epoch seconds)"
+  "recorded_at": 1708789200
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `sensor_id` | string (UUID v4) | yes | The sensor posting data |
+| `mac` | string | yes | ESP8266 WiFi MAC address (e.g. `"8C:CE:4E:CE:66:15"`) |
 | `readings` | array | yes | One or more metric readings (min 1) |
 | `readings[].metric` | string | yes | One of: `temperature`, `humidity`, `soil_moisture`, `light_lux`, `co2_ppm` |
 | `readings[].value` | float | yes | The measured value |
@@ -38,8 +38,8 @@ Ingest sensor readings from an ESP8266 device.
 ```json
 {
   "status": "ok",
-  "inserted": 3,
-  "alerts_triggered": 1
+  "inserted": 1,
+  "alerts_triggered": 0
 }
 ```
 
@@ -53,25 +53,7 @@ Ingest sensor readings from an ESP8266 device.
 
 **422 Unprocessable Entity** — validation failure
 
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "sensor_id"],
-      "msg": "value is not a valid uuid",
-      "type": "value_error.uuid"
-    }
-  ]
-}
-```
-
 **500 Internal Server Error** — database or upstream failure
-
-```json
-{
-  "detail": "Failed to insert readings"
-}
-```
 
 ---
 
@@ -107,41 +89,11 @@ Retrieve historical readings for a sensor, optionally filtered by date range.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `data` | array | List of reading objects |
-| `data[].id` | string (UUID) | Reading row ID |
-| `data[].sensor_id` | string (UUID) | Sensor FK |
-| `data[].metric` | string | Metric name |
-| `data[].value` | float | Measured value |
-| `data[].recorded_at` | string (ISO 8601) | Timestamp in UTC |
-| `count` | integer | Total number of items returned |
-
-### Error Responses
-
-**422 Unprocessable Entity** — invalid query params
-
-```json
-{
-  "detail": [
-    {
-      "loc": ["query", "sensor_id"],
-      "msg": "value is not a valid uuid",
-      "type": "value_error.uuid"
-    }
-  ]
-}
-```
-
 ---
 
 ## GET /api/sensors
 
 List all registered sensors.
-
-### Query Parameters
-
-None.
 
 ### Success Response — 200 OK
 
@@ -150,7 +102,9 @@ None.
   "data": [
     {
       "id": "uuid",
-      "name": "Garden Bed A",
+      "name": "8C:CE:4E:CE:66:15",
+      "mac_address": "8C:CE:4E:CE:66:15",
+      "display_name": "Garden Bed A",
       "location": "Backyard",
       "created_at": "2024-02-20T08:00:00Z"
     }
@@ -161,22 +115,241 @@ None.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `data` | array | List of sensor objects |
 | `data[].id` | string (UUID) | Sensor PK |
-| `data[].name` | string | Human-readable name |
+| `data[].name` | string | Internal name (often the MAC address) |
+| `data[].mac_address` | string or null | WiFi MAC address |
+| `data[].display_name` | string or null | User-set friendly name |
 | `data[].location` | string | Physical location |
 | `data[].created_at` | string (ISO 8601) | When the sensor was registered |
 | `count` | integer | Number of sensors returned |
 
-### Error Responses
+---
 
-**500 Internal Server Error**
+## PUT /api/sensors/{sensor_id}
+
+Update a sensor's display name and/or location.
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sensor_id` | string (UUID) | yes | The sensor to update |
+
+### Request Body
 
 ```json
 {
-  "detail": "Failed to fetch sensors"
+  "display_name": "Garden Bed A",
+  "location": "Backyard"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `display_name` | string | no | Friendly name for the sensor |
+| `location` | string | no | Physical location |
+
+At least one field must be provided.
+
+### Success Response — 200 OK
+
+Returns the updated sensor object (same schema as GET /api/sensors items).
+
+### Error Responses
+
+**400 Bad Request** — no fields provided
+
+**404 Not Found** — sensor not found
+
+---
+
+## GET /api/plants
+
+List all plants with their associated sensors.
+
+### Success Response — 200 OK
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Tomato Plant",
+      "species": "Solanum lycopersicum",
+      "planted_date": "2024-03-01",
+      "photo_url": "https://example.com/tomato.jpg",
+      "notes": "Needs lots of sun",
+      "created_at": "2024-02-20T08:00:00Z",
+      "sensors": [
+        {
+          "id": "uuid",
+          "name": "8C:CE:4E:CE:66:15",
+          "mac_address": "8C:CE:4E:CE:66:15",
+          "display_name": "Garden Bed A",
+          "location": "Backyard",
+          "created_at": "2024-02-20T08:00:00Z"
+        }
+      ]
+    }
+  ],
+  "count": 1
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `data[].id` | string (UUID) | Plant PK |
+| `data[].name` | string | Plant name |
+| `data[].species` | string or null | Botanical species |
+| `data[].planted_date` | string (date) or null | When it was planted |
+| `data[].photo_url` | string or null | URL to plant image |
+| `data[].notes` | string or null | Freeform notes |
+| `data[].created_at` | string (ISO 8601) | Record creation time |
+| `data[].sensors` | array | List of associated sensor objects |
+| `count` | integer | Number of plants returned |
+
+---
+
+## POST /api/plants
+
+Create a new plant.
+
+### Request Body
+
+```json
+{
+  "name": "Tomato Plant",
+  "species": "Solanum lycopersicum",
+  "planted_date": "2024-03-01",
+  "photo_url": "https://example.com/tomato.jpg",
+  "notes": "Needs lots of sun"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Plant name |
+| `species` | string | no | Botanical species |
+| `planted_date` | string (date) | no | When planted (YYYY-MM-DD) |
+| `photo_url` | string | no | URL to plant image |
+| `notes` | string | no | Freeform notes |
+
+### Success Response — 201 Created
+
+Returns the created plant object with an empty `sensors` array.
+
+---
+
+## PUT /api/plants/{plant_id}
+
+Update an existing plant.
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plant_id` | string (UUID) | yes | The plant to update |
+
+### Request Body
+
+Same fields as POST /api/plants. All fields are optional; at least one must be provided.
+
+### Success Response — 200 OK
+
+Returns the updated plant object with its associated sensors.
+
+### Error Responses
+
+**400 Bad Request** — no fields provided
+
+**404 Not Found** — plant not found
+
+---
+
+## DELETE /api/plants/{plant_id}
+
+Delete a plant. Cascade-deletes all sensor_plant associations.
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plant_id` | string (UUID) | yes | The plant to delete |
+
+### Success Response — 200 OK
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Error Responses
+
+**404 Not Found** — plant not found
+
+---
+
+## POST /api/plants/{plant_id}/sensors
+
+Associate a sensor with a plant.
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plant_id` | string (UUID) | yes | The plant |
+
+### Request Body
+
+```json
+{
+  "sensor_id": "uuid"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sensor_id` | string (UUID) | yes | The sensor to associate |
+
+### Success Response — 201 Created
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Error Responses
+
+**404 Not Found** — plant or sensor not found
+
+**409 Conflict** — association already exists (Supabase unique constraint)
+
+---
+
+## DELETE /api/plants/{plant_id}/sensors/{sensor_id}
+
+Remove a sensor association from a plant.
+
+### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plant_id` | string (UUID) | yes | The plant |
+| `sensor_id` | string (UUID) | yes | The sensor to unassociate |
+
+### Success Response — 200 OK
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Error Responses
+
+**404 Not Found** — association not found
 
 ---
 
@@ -191,8 +364,8 @@ Create a new alert rule for a sensor.
   "sensor_id": "string (UUID)",
   "metric": "string",
   "condition": "string",
-  "threshold": "number (float)",
-  "email": "string (email)"
+  "threshold": 30.0,
+  "email": "user@example.com"
 }
 ```
 
@@ -222,25 +395,7 @@ Create a new alert rule for a sensor.
 
 **422 Unprocessable Entity** — validation failure
 
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "condition"],
-      "msg": "value is not a valid enumeration member; permitted: 'above', 'below'",
-      "type": "type_error.enum"
-    }
-  ]
-}
-```
-
-**500 Internal Server Error**
-
-```json
-{
-  "detail": "Failed to create alert"
-}
-```
+**500 Internal Server Error** — database failure
 
 ---
 
@@ -253,7 +408,7 @@ List alert rules, optionally filtered by sensor.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `sensor_id` | string (UUID) | no | Filter alerts by sensor |
-| `active` | boolean | no | Filter by active status (default: return all) |
+| `active` | boolean | no | Filter by active status |
 
 ### Success Response — 200 OK
 
@@ -274,34 +429,6 @@ List alert rules, optionally filtered by sensor.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `data` | array | List of alert rule objects |
-| `data[].id` | string (UUID) | Alert rule PK |
-| `data[].sensor_id` | string (UUID) | Sensor FK |
-| `data[].metric` | string | Metric being monitored |
-| `data[].condition` | string | `"above"` or `"below"` |
-| `data[].threshold` | float | Threshold value |
-| `data[].email` | string | Notification email |
-| `data[].active` | boolean | Whether the rule is active |
-| `count` | integer | Number of alert rules returned |
-
-### Error Responses
-
-**422 Unprocessable Entity** — invalid sensor_id format
-
-```json
-{
-  "detail": [
-    {
-      "loc": ["query", "sensor_id"],
-      "msg": "value is not a valid uuid",
-      "type": "value_error.uuid"
-    }
-  ]
-}
-```
-
 ---
 
 ## DELETE /api/alerts/{alert_id}
@@ -312,7 +439,7 @@ Soft-delete (deactivate) an alert rule by setting `active = false`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `alert_id` | string (UUID v4) | yes | The alert rule to deactivate |
+| `alert_id` | string (UUID) | yes | The alert rule to deactivate |
 
 ### Success Response — 200 OK
 
@@ -325,23 +452,3 @@ Soft-delete (deactivate) an alert rule by setting `active = false`.
 ### Error Responses
 
 **404 Not Found** — no alert with that ID
-
-```json
-{
-  "detail": "Alert not found"
-}
-```
-
-**422 Unprocessable Entity** — invalid alert_id format
-
-```json
-{
-  "detail": [
-    {
-      "loc": ["path", "alert_id"],
-      "msg": "value is not a valid uuid",
-      "type": "value_error.uuid"
-    }
-  ]
-}
-```

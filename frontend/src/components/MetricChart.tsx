@@ -3,15 +3,17 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { Reading, Metric, METRICS } from '../types';
+import { Reading, Metric, METRICS, SoilType } from '../types';
+import { rawToPercent } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
 
 interface Props {
   sensorId: string;
+  soilType?: SoilType | null;
 }
 
-export function MetricChart({ sensorId }: Props) {
+export function MetricChart({ sensorId, soilType }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [range, setRange] = useState<Range>('24h');
   const [customFrom, setCustomFrom] = useState('');
@@ -87,9 +89,14 @@ export function MetricChart({ sensorId }: Props) {
     return () => clearInterval(interval);
   }, [fetchReadings, fetchLatest]);
 
+  const convertValue = (v: number) =>
+    metric === 'soil_moisture'
+      ? rawToPercent(v, soilType?.raw_dry, soilType?.raw_wet)
+      : v;
+
   const chartData = readings.map((r) => ({
     time: new Date(r.recorded_at).toLocaleString(),
-    value: r.value,
+    value: convertValue(r.value),
   }));
 
   return (
@@ -108,7 +115,7 @@ export function MetricChart({ sensorId }: Props) {
 
       {latest && (
         <div className="current-reading">
-          <span className="current-value">{latest.value.toFixed(1)} {metricInfo.unit}</span>
+          <span className="current-value">{convertValue(latest.value).toFixed(1)} {metricInfo.unit}</span>
           <span className="current-time">
             {new Date(latest.recorded_at).toLocaleString()}
           </span>

@@ -166,6 +166,9 @@ void setup() {
   Serial.println();
   Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
 
+  String macAddress = WiFi.macAddress();
+  Serial.printf("MAC: %s\n", macAddress.c_str());
+
   // --- Step 2: Sync time via NTP ---
   timeClient.begin();
   timeClient.update();
@@ -192,7 +195,7 @@ void setup() {
 
   // --- Step 4: Build JSON payload with all sensor readings ---
   JsonDocument doc;
-  doc["sensor_id"] = SENSOR_ID;
+  doc["mac"] = macAddress;
   JsonArray readings = doc["readings"].to<JsonArray>();
   doc["recorded_at"] = epochTime;
 

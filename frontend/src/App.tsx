@@ -1,68 +1,51 @@
-import { useState, useEffect } from 'react';
-import { supabase } from './lib/supabase';
-import { Sensor } from './types';
-import { SensorSelector } from './components/SensorSelector';
-import { MetricChart } from './components/MetricChart';
-import { AlertsPanel } from './components/AlertsPanel';
-import { AlertHistory } from './components/AlertHistory';
+import { useState } from 'react';
+import { PlantDashboard } from './components/PlantDashboard';
+import { PlantDetail } from './components/PlantDetail';
+import { SoilTypeManager } from './components/SoilTypeManager';
 import './App.css';
 
+type View = 'dashboard' | 'plant-detail' | 'soil-types';
+
 export function App() {
-  const [sensors, setSensors] = useState<Sensor[]>([]);
-  const [selectedSensor, setSelectedSensor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchSensors() {
-      const { data, error: err } = await supabase
-        .from('sensors')
-        .select('*')
-        .order('name');
-
-      if (err) {
-        setError(err.message);
-      } else if (data) {
-        setSensors(data);
-        if (data.length > 0 && !selectedSensor) {
-          setSelectedSensor(data[0].id);
-        }
-      }
-      setLoading(false);
-    }
-
-    fetchSensors();
-  }, []);
-
-  if (loading) {
-    return <div className="app"><p className="status">Loading sensors...</p></div>;
-  }
-
-  if (error) {
-    return <div className="app"><p className="status error">Error: {error}</p></div>;
-  }
+  const [view, setView] = useState<View>('dashboard');
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
 
   return (
     <div className="app">
       <header>
-        <h1>Smart Garden Dashboard</h1>
-        <SensorSelector
-          sensors={sensors}
-          selected={selectedSensor}
-          onSelect={setSelectedSensor}
-        />
+        <h1 onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
+          Smart Garden
+        </h1>
+        <button
+          className="btn-secondary btn-small"
+          onClick={() => setView('soil-types')}
+          title="Soil Type Settings"
+        >
+          Soil Types
+        </button>
       </header>
 
-      {selectedSensor ? (
-        <main>
-          <MetricChart sensorId={selectedSensor} />
-          <div className="bottom-panels">
-            <AlertsPanel sensorId={selectedSensor} />
-            <AlertHistory sensorId={selectedSensor} />
-          </div>
-        </main>
-      ) : (
-        <p className="status">Select a sensor to get started.</p>
+      {view === 'dashboard' && (
+        <PlantDashboard
+          onSelectPlant={(id) => {
+            setSelectedPlantId(id);
+            setView('plant-detail');
+          }}
+        />
+      )}
+
+      {view === 'plant-detail' && selectedPlantId && (
+        <PlantDetail
+          plantId={selectedPlantId}
+          onBack={() => {
+            setView('dashboard');
+            setSelectedPlantId(null);
+          }}
+        />
+      )}
+
+      {view === 'soil-types' && (
+        <SoilTypeManager />
       )}
     </div>
   );

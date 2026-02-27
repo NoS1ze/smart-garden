@@ -1,8 +1,35 @@
 export interface Sensor {
   id: string;
-  name: string;
+  mac_address: string;
+  display_name: string | null;
   location: string;
   created_at: string;
+}
+
+export interface SoilType {
+  id: string;
+  name: string;
+  raw_dry: number;
+  raw_wet: number;
+  created_at: string;
+}
+
+export interface Plant {
+  id: string;
+  name: string;
+  species: string | null;
+  planted_date: string | null;
+  photo_url: string | null;
+  notes: string | null;
+  soil_type_id: string | null;
+  created_at: string;
+  soil_type: SoilType | null;
+}
+
+export interface SensorPlant {
+  sensor_id: string;
+  plant_id: string;
+  assigned_at: string;
 }
 
 export interface Reading {

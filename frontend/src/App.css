@@ -28,7 +28,402 @@ header {
 header h1 {
   font-size: 1.5rem;
   color: #4ade80;
+  cursor: pointer;
 }
+
+/* ---- Dashboard ---- */
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.dashboard-header h2 {
+  font-size: 1.25rem;
+  color: #ccc;
+}
+
+.plant-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .plant-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .plant-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Plant Card ---- */
+
+.plant-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.plant-card:hover {
+  border-color: #4ade80;
+  transform: translateY(-2px);
+}
+
+.plant-photo {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+}
+
+.plant-photo-placeholder {
+  width: 100%;
+  height: 160px;
+  background: linear-gradient(135deg, #1a3a1a, #1a2a1a);
+}
+
+.plant-card-body {
+  padding: 14px;
+}
+
+.plant-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plant-card-name {
+  font-size: 1.05rem;
+  color: #e0e0e0;
+}
+
+.attention-badge {
+  background: #f87171;
+  color: #111;
+  font-weight: 700;
+  font-size: 0.7rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plant-card-species {
+  font-style: italic;
+  color: #888;
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+
+.plant-card-date {
+  color: #666;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.plant-card-moisture {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.moisture-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.moisture-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.plant-card-time {
+  color: #555;
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+/* ---- Empty State ---- */
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #888;
+}
+
+.empty-state p {
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+}
+
+/* ---- Buttons ---- */
+
+.btn-primary {
+  background: #4ade80;
+  color: #111;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-secondary {
+  background: #2a2a2a;
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-large {
+  padding: 12px 28px;
+  font-size: 1rem;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: #4ade80;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin-bottom: 16px;
+  padding: 4px 0;
+}
+
+/* ---- Modal ---- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 24px;
+  width: 90%;
+  max-width: 480px;
+}
+
+.modal h2 {
+  margin-bottom: 16px;
+  color: #e0e0e0;
+  font-size: 1.2rem;
+}
+
+/* ---- Forms ---- */
+
+.plant-form label,
+.plant-edit-form label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.plant-form input,
+.plant-form textarea,
+.plant-edit-form input,
+.plant-edit-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.plant-form textarea,
+.plant-edit-form textarea {
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ---- Plant Detail ---- */
+
+.plant-detail-header {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.plant-detail-photo {
+  width: 200px;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.plant-detail-photo-placeholder {
+  width: 200px;
+  height: 200px;
+  background: linear-gradient(135deg, #1a3a1a, #1a2a1a);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.plant-detail-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.plant-detail-info h2 {
+  font-size: 1.5rem;
+  margin-bottom: 6px;
+}
+
+.plant-detail-species {
+  font-style: italic;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.plant-detail-date {
+  color: #666;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.plant-detail-notes {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+/* ---- Detail Sections ---- */
+
+.detail-section {
+  margin-bottom: 32px;
+}
+
+.detail-section h3 {
+  font-size: 1.1rem;
+  color: #ccc;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.detail-section h4 {
+  font-size: 0.9rem;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.sensor-chart-block {
+  margin-bottom: 24px;
+}
+
+/* ---- Sensor List ---- */
+
+.sensor-list {
+  list-style: none;
+}
+
+.sensor-list-item {
+  padding: 10px 12px;
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.sensor-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sensor-location {
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.sensor-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sensor-rename input {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  width: 180px;
+}
+
+.add-sensor-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.add-sensor-row select {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  flex: 1;
+  max-width: 400px;
+}
+
+/* ---- Existing component styles ---- */
 
 .sensor-selector {
   display: flex;
@@ -145,7 +540,7 @@ header h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  margin-top: 32px;
+  margin-top: 16px;
 }
 
 @media (max-width: 768px) {
@@ -237,4 +632,94 @@ header h1 {
   padding: 2px 8px;
   cursor: pointer;
   font-size: 0.75rem;
+}
+
+/* ---- Soil Type Manager ---- */
+
+.soil-type-manager {
+  max-width: 700px;
+}
+
+.soil-type-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
+.soil-type-form input {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+.soil-type-form label {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.soil-type-form label input {
+  display: block;
+  width: 80px;
+  margin-top: 2px;
+}
+
+.soil-types-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.soil-types-table th {
+  text-align: left;
+  color: #666;
+  padding: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.soil-types-table td {
+  padding: 8px;
+  border-bottom: 1px solid #222;
+}
+
+.soil-types-table td input {
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.soil-types-table td .btn-small {
+  margin-right: 4px;
+}
+
+.plant-detail-soil {
+  color: #4ade80;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+/* Soil type select in forms */
+.plant-form select,
+.plant-edit-form select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
 }

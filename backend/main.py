@@ -13,16 +13,26 @@ from models import (
     AlertCreate,
     AlertOut,
     AlertsListResponse,
+    PlantCreate,
+    PlantOut,
+    PlantUpdate,
+    PlantsListResponse,
     ReadingOut,
     ReadingsCreate,
     ReadingsCreateResponse,
     ReadingsListResponse,
+    SensorAssociate,
     SensorOut,
+    SensorUpdate,
     SensorsListResponse,
+    SoilTypeCreate,
+    SoilTypeOut,
+    SoilTypeUpdate,
+    SoilTypesListResponse,
     StatusResponse,
 )
 
-app = FastAPI(title="Smart Garden IoT API", version="1.0.0")
+app = FastAPI(title="Smart Garden IoT API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,7 +57,28 @@ async def health():
 @app.post("/api/readings", response_model=ReadingsCreateResponse, status_code=201)
 async def create_readings(body: ReadingsCreate):
     recorded_at = datetime.fromtimestamp(body.recorded_at, tz=timezone.utc).isoformat()
-    sensor_id = str(body.sensor_id)
+
+    # Look up sensor by MAC address
+    result = (
+        supabase.table("sensors")
+        .select("id")
+        .eq("mac_address", body.mac)
+        .limit(1)
+        .execute()
+    )
+
+    if result.data:
+        sensor_id = result.data[0]["id"]
+    else:
+        # Auto-register unknown MAC
+        insert_result = (
+            supabase.table("sensors")
+            .insert({"mac_address": body.mac, "name": body.mac, "location": ""})
+            .execute()
+        )
+        if not insert_result.data:
+            raise HTTPException(status_code=500, detail="Failed to auto-register sensor")
+        sensor_id = insert_result.data[0]["id"]
 
     rows = [
         {
@@ -119,6 +150,231 @@ async def list_sensors():
         data=[SensorOut(**row) for row in data],
         count=len(data),
     )
+
+
+@app.put("/api/sensors/{sensor_id}", response_model=SensorOut)
+async def update_sensor(sensor_id: UUID, body: SensorUpdate):
+    updates = {}
+    if body.display_name is not None:
+        updates["display_name"] = body.display_name
+    if body.location is not None:
+        updates["location"] = body.location
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    result = (
+        supabase.table("sensors")
+        .update(updates)
+        .eq("id", str(sensor_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+    return SensorOut(**result.data[0])
+
+
+# ── Soil Types ────────────────────────────────────────────
+
+
+@app.get("/api/soil-types", response_model=SoilTypesListResponse)
+async def list_soil_types():
+    result = supabase.table("soil_types").select("*").order("name").execute()
+    data = result.data or []
+    return SoilTypesListResponse(
+        data=[SoilTypeOut(**row) for row in data],
+        count=len(data),
+    )
+
+
+@app.post("/api/soil-types", response_model=SoilTypeOut, status_code=201)
+async def create_soil_type(body: SoilTypeCreate):
+    row = body.model_dump()
+    result = supabase.table("soil_types").insert(row).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create soil type")
+    return SoilTypeOut(**result.data[0])
+
+
+@app.put("/api/soil-types/{soil_type_id}", response_model=SoilTypeOut)
+async def update_soil_type(soil_type_id: UUID, body: SoilTypeUpdate):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = (
+        supabase.table("soil_types")
+        .update(updates)
+        .eq("id", str(soil_type_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Soil type not found")
+    return SoilTypeOut(**result.data[0])
+
+
+@app.delete("/api/soil-types/{soil_type_id}", response_model=StatusResponse)
+async def delete_soil_type(soil_type_id: UUID):
+    result = (
+        supabase.table("soil_types")
+        .delete()
+        .eq("id", str(soil_type_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Soil type not found")
+    return StatusResponse()
+
+
+# ── Plants ────────────────────────────────────────────────
+
+
+def _enrich_plant(plant_row: dict, sensors: list[SensorOut]) -> PlantOut:
+    """Build a PlantOut with nested soil_type if soil_type_id is set."""
+    soil_type = None
+    if plant_row.get("soil_type_id"):
+        st_result = (
+            supabase.table("soil_types")
+            .select("*")
+            .eq("id", plant_row["soil_type_id"])
+            .maybe_single()
+            .execute()
+        )
+        if st_result.data:
+            soil_type = SoilTypeOut(**st_result.data)
+    return PlantOut(**plant_row, sensors=sensors, soil_type=soil_type)
+
+
+def _get_plant_sensors(plant_id: str) -> list[SensorOut]:
+    """Fetch sensors associated with a plant via junction table."""
+    assoc_result = (
+        supabase.table("sensor_plant")
+        .select("sensor_id")
+        .eq("plant_id", plant_id)
+        .execute()
+    )
+    sensor_ids = [row["sensor_id"] for row in (assoc_result.data or [])]
+    if not sensor_ids:
+        return []
+    sensors_result = (
+        supabase.table("sensors")
+        .select("*")
+        .in_("id", sensor_ids)
+        .execute()
+    )
+    return [SensorOut(**s) for s in (sensors_result.data or [])]
+
+
+@app.get("/api/plants", response_model=PlantsListResponse)
+async def list_plants():
+    plants_result = supabase.table("plants").select("*").order("created_at", desc=True).execute()
+    plants = plants_result.data or []
+
+    out: list[PlantOut] = []
+    for plant in plants:
+        sensors = _get_plant_sensors(plant["id"])
+        out.append(_enrich_plant(plant, sensors))
+
+    return PlantsListResponse(data=out, count=len(out))
+
+
+@app.get("/api/plants/{plant_id}", response_model=PlantOut)
+async def get_plant(plant_id: UUID):
+    result = (
+        supabase.table("plants")
+        .select("*")
+        .eq("id", str(plant_id))
+        .maybe_single()
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    sensors = _get_plant_sensors(str(plant_id))
+    return _enrich_plant(result.data, sensors)
+
+
+@app.post("/api/plants", response_model=PlantOut, status_code=201)
+async def create_plant(body: PlantCreate):
+    row = body.model_dump(exclude_none=True)
+    if "planted_date" in row:
+        row["planted_date"] = row["planted_date"].isoformat()
+    if "soil_type_id" in row:
+        row["soil_type_id"] = str(row["soil_type_id"])
+    result = supabase.table("plants").insert(row).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create plant")
+    return _enrich_plant(result.data[0], sensors=[])
+
+
+@app.put("/api/plants/{plant_id}", response_model=PlantOut)
+async def update_plant(plant_id: UUID, body: PlantUpdate):
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    if "planted_date" in updates and updates["planted_date"] is not None:
+        updates["planted_date"] = updates["planted_date"].isoformat()
+    if "soil_type_id" in updates and updates["soil_type_id"] is not None:
+        updates["soil_type_id"] = str(updates["soil_type_id"])
+
+    result = (
+        supabase.table("plants")
+        .update(updates)
+        .eq("id", str(plant_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Plant not found")
+
+    sensors = _get_plant_sensors(str(plant_id))
+    return _enrich_plant(result.data[0], sensors)
+
+
+@app.delete("/api/plants/{plant_id}", response_model=StatusResponse)
+async def delete_plant(plant_id: UUID):
+    result = (
+        supabase.table("plants")
+        .delete()
+        .eq("id", str(plant_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    return StatusResponse()
+
+
+@app.post("/api/plants/{plant_id}/sensors", response_model=StatusResponse, status_code=201)
+async def associate_sensor(plant_id: UUID, body: SensorAssociate):
+    # Verify plant exists
+    plant = supabase.table("plants").select("id").eq("id", str(plant_id)).limit(1).execute()
+    if not plant.data:
+        raise HTTPException(status_code=404, detail="Plant not found")
+
+    # Verify sensor exists
+    sensor = supabase.table("sensors").select("id").eq("id", str(body.sensor_id)).limit(1).execute()
+    if not sensor.data:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+
+    result = (
+        supabase.table("sensor_plant")
+        .insert({"sensor_id": str(body.sensor_id), "plant_id": str(plant_id)})
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to associate sensor")
+    return StatusResponse()
+
+
+@app.delete("/api/plants/{plant_id}/sensors/{sensor_id}", response_model=StatusResponse)
+async def unassociate_sensor(plant_id: UUID, sensor_id: UUID):
+    result = (
+        supabase.table("sensor_plant")
+        .delete()
+        .eq("plant_id", str(plant_id))
+        .eq("sensor_id", str(sensor_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Association not found")
+    return StatusResponse()
 
 
 # ── Alerts ────────────────────────────────────────────────
