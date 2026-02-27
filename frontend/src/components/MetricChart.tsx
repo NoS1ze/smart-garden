@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label
 } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { Reading, Metric, METRICS, SoilType } from '../types';
+import { Reading, Metric, METRICS, SoilType, PlantType } from '../types';
 import { rawToPercent } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
@@ -11,10 +11,12 @@ type Range = '24h' | '7d' | '30d' | 'custom';
 interface Props {
   sensorId: string;
   soilType?: SoilType | null;
+  plantType?: PlantType | null;
 }
 
-export function MetricChart({ sensorId, soilType }: Props) {
+export function MetricChart({ sensorId, soilType, plantType }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
+  const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
   const [range, setRange] = useState<Range>('24h');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -63,6 +65,24 @@ export function MetricChart({ sensorId, soilType }: Props) {
     setLoading(false);
   }, [sensorId, metric, range, customFrom, customTo]);
 
+  const fetchAvailableMetrics = useCallback(async () => {
+    const { data } = await supabase
+      .from('readings')
+      .select('metric')
+      .eq('sensor_id', sensorId);
+
+    if (data) {
+      const metrics = new Set(data.map(d => d.metric as Metric));
+      if (metrics.size > 0) {
+        setAvailableMetrics(metrics);
+        // If current metric not available, switch to first available
+        if (!metrics.has(metric)) {
+          setMetric(Array.from(metrics)[0]);
+        }
+      }
+    }
+  }, [sensorId, metric]);
+
   const fetchLatest = useCallback(async () => {
     const { data } = await supabase
       .from('readings')
@@ -78,6 +98,10 @@ export function MetricChart({ sensorId, soilType }: Props) {
       setLatest(null);
     }
   }, [sensorId, metric]);
+
+  useEffect(() => {
+    fetchAvailableMetrics();
+  }, [sensorId]);
 
   useEffect(() => {
     fetchReadings();
@@ -99,10 +123,37 @@ export function MetricChart({ sensorId, soilType }: Props) {
     value: convertValue(r.value),
   }));
 
+  const getReferenceLines = () => {
+    if (!plantType) return null;
+
+    let prefix = '';
+    switch(metric) {
+      case 'temperature': prefix = 'temp'; break;
+      case 'humidity': prefix = 'humidity'; break;
+      case 'soil_moisture': prefix = 'moisture'; break;
+      case 'light_lux': prefix = 'light'; break;
+      case 'co2_ppm': prefix = 'co2'; break;
+    }
+
+    const min = plantType[`min_${prefix}` as keyof PlantType] as number;
+    const max = plantType[`max_${prefix}` as keyof PlantType] as number;
+    const optMin = plantType[`optimal_min_${prefix}` as keyof PlantType] as number;
+    const optMax = plantType[`optimal_max_${prefix}` as keyof PlantType] as number;
+
+    return (
+      <>
+        {min !== null && <ReferenceLine y={min} stroke="#ef4444" strokeDasharray="3 3"><Label value="Min" position="insideLeft" fill="#ef4444" fontSize={10}/></ReferenceLine>}
+        {max !== null && <ReferenceLine y={max} stroke="#ef4444" strokeDasharray="3 3"><Label value="Max" position="insideLeft" fill="#ef4444" fontSize={10}/></ReferenceLine>}
+        {optMin !== null && <ReferenceLine y={optMin} stroke="#3b82f6" strokeDasharray="3 3"><Label value="Opt Min" position="insideLeft" fill="#3b82f6" fontSize={10}/></ReferenceLine>}
+        {optMax !== null && <ReferenceLine y={optMax} stroke="#3b82f6" strokeDasharray="3 3"><Label value="Opt Max" position="insideLeft" fill="#3b82f6" fontSize={10}/></ReferenceLine>}
+      </>
+    );
+  };
+
   return (
     <div className="metric-chart">
       <div className="metric-tabs">
-        {METRICS.map((m) => (
+        {METRICS.filter(m => availableMetrics.has(m.key)).map((m) => (
           <button
             key={m.key}
             className={metric === m.key ? 'tab active' : 'tab'}
@@ -156,6 +207,7 @@ export function MetricChart({ sensorId, soilType }: Props) {
             <Tooltip
               contentStyle={{ background: '#1e1e1e', border: '1px solid #444' }}
             />
+            {getReferenceLines()}
             <Line
               type="monotone"
               dataKey="value"

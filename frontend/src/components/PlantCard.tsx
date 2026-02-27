@@ -90,7 +90,7 @@ export function PlantCard({ plant, onClick }: Props) {
           <h3 className="plant-card-name">{plant.name}</h3>
           {needsAttention && <span className="attention-badge">!</span>}
         </div>
-        {plant.species && <p className="plant-card-species">{plant.species}</p>}
+        {plant.plant_type && <p className="plant-card-species">{plant.plant_type.name}</p>}
         {plant.planted_date && (
           <p className="plant-card-date">
             Planted {new Date(plant.planted_date).toLocaleDateString()}

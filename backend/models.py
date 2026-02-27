@@ -101,11 +101,92 @@ class SoilTypesListResponse(BaseModel):
     count: int
 
 
+# ── Plant Types ───────────────────────────────────────────
+
+class PlantTypeCreate(BaseModel):
+    name: str
+    min_temp: Optional[float] = None
+    max_temp: Optional[float] = None
+    optimal_min_temp: Optional[float] = None
+    optimal_max_temp: Optional[float] = None
+    min_humidity: Optional[float] = None
+    max_humidity: Optional[float] = None
+    optimal_min_humidity: Optional[float] = None
+    optimal_max_humidity: Optional[float] = None
+    min_moisture: Optional[float] = None
+    max_moisture: Optional[float] = None
+    optimal_min_moisture: Optional[float] = None
+    optimal_max_moisture: Optional[float] = None
+    min_light: Optional[float] = None
+    max_light: Optional[float] = None
+    optimal_min_light: Optional[float] = None
+    optimal_max_light: Optional[float] = None
+    min_co2: Optional[float] = None
+    max_co2: Optional[float] = None
+    optimal_min_co2: Optional[float] = None
+    optimal_max_co2: Optional[float] = None
+
+
+class PlantTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    min_temp: Optional[float] = None
+    max_temp: Optional[float] = None
+    optimal_min_temp: Optional[float] = None
+    optimal_max_temp: Optional[float] = None
+    min_humidity: Optional[float] = None
+    max_humidity: Optional[float] = None
+    optimal_min_humidity: Optional[float] = None
+    optimal_max_humidity: Optional[float] = None
+    min_moisture: Optional[float] = None
+    max_moisture: Optional[float] = None
+    optimal_min_moisture: Optional[float] = None
+    optimal_max_moisture: Optional[float] = None
+    min_light: Optional[float] = None
+    max_light: Optional[float] = None
+    optimal_min_light: Optional[float] = None
+    optimal_max_light: Optional[float] = None
+    min_co2: Optional[float] = None
+    max_co2: Optional[float] = None
+    optimal_min_co2: Optional[float] = None
+    optimal_max_co2: Optional[float] = None
+
+
+class PlantTypeOut(BaseModel):
+    id: UUID
+    name: str
+    min_temp: Optional[float] = None
+    max_temp: Optional[float] = None
+    optimal_min_temp: Optional[float] = None
+    optimal_max_temp: Optional[float] = None
+    min_humidity: Optional[float] = None
+    max_humidity: Optional[float] = None
+    optimal_min_humidity: Optional[float] = None
+    optimal_max_humidity: Optional[float] = None
+    min_moisture: Optional[float] = None
+    max_moisture: Optional[float] = None
+    optimal_min_moisture: Optional[float] = None
+    optimal_max_moisture: Optional[float] = None
+    min_light: Optional[float] = None
+    max_light: Optional[float] = None
+    optimal_min_light: Optional[float] = None
+    optimal_max_light: Optional[float] = None
+    min_co2: Optional[float] = None
+    max_co2: Optional[float] = None
+    optimal_min_co2: Optional[float] = None
+    optimal_max_co2: Optional[float] = None
+    created_at: datetime
+
+
+class PlantTypesListResponse(BaseModel):
+    data: list[PlantTypeOut]
+    count: int
+
+
 # ── Plants ────────────────────────────────────────────────
 
 class PlantCreate(BaseModel):
     name: str
-    species: Optional[str] = None
+    plant_type_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -114,7 +195,7 @@ class PlantCreate(BaseModel):
 
 class PlantUpdate(BaseModel):
     name: Optional[str] = None
-    species: Optional[str] = None
+    plant_type_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -124,7 +205,7 @@ class PlantUpdate(BaseModel):
 class PlantOut(BaseModel):
     id: UUID
     name: str
-    species: Optional[str] = None
+    plant_type_id: Optional[UUID] = None
     planted_date: Optional[date] = None
     photo_url: Optional[str] = None
     notes: Optional[str] = None
@@ -132,6 +213,7 @@ class PlantOut(BaseModel):
     created_at: datetime
     sensors: list[SensorOut] = []
     soil_type: Optional[SoilTypeOut] = None
+    plant_type: Optional[PlantTypeOut] = None
 
 
 class PlantsListResponse(BaseModel):

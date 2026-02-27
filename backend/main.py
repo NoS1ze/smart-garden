@@ -29,6 +29,10 @@ from models import (
     SoilTypeOut,
     SoilTypeUpdate,
     SoilTypesListResponse,
+    PlantTypeCreate,
+    PlantTypeOut,
+    PlantTypeUpdate,
+    PlantTypesListResponse,
     StatusResponse,
 )
 
@@ -225,11 +229,62 @@ async def delete_soil_type(soil_type_id: UUID):
     return StatusResponse()
 
 
+# ── Plant Types ───────────────────────────────────────────
+
+
+@app.get("/api/plant-types", response_model=PlantTypesListResponse)
+async def list_plant_types():
+    result = supabase.table("plant_types").select("*").order("name").execute()
+    data = result.data or []
+    return PlantTypesListResponse(
+        data=[PlantTypeOut(**row) for row in data],
+        count=len(data),
+    )
+
+
+@app.post("/api/plant-types", response_model=PlantTypeOut, status_code=201)
+async def create_plant_type(body: PlantTypeCreate):
+    row = body.model_dump()
+    result = supabase.table("plant_types").insert(row).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to create plant type")
+    return PlantTypeOut(**result.data[0])
+
+
+@app.put("/api/plant-types/{plant_type_id}", response_model=PlantTypeOut)
+async def update_plant_type(plant_type_id: UUID, body: PlantTypeUpdate):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    result = (
+        supabase.table("plant_types")
+        .update(updates)
+        .eq("id", str(plant_type_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Plant type not found")
+    return PlantTypeOut(**result.data[0])
+
+
+@app.delete("/api/plant-types/{plant_type_id}", response_model=StatusResponse)
+async def delete_plant_type(plant_type_id: UUID):
+    result = (
+        supabase.table("plant_types")
+        .delete()
+        .eq("id", str(plant_type_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Plant type not found")
+    return StatusResponse()
+
+
 # ── Plants ────────────────────────────────────────────────
 
 
 def _enrich_plant(plant_row: dict, sensors: list[SensorOut]) -> PlantOut:
-    """Build a PlantOut with nested soil_type if soil_type_id is set."""
+    """Build a PlantOut with nested soil_type and plant_type if IDs are set."""
     soil_type = None
     if plant_row.get("soil_type_id"):
         st_result = (
@@ -241,7 +296,20 @@ def _enrich_plant(plant_row: dict, sensors: list[SensorOut]) -> PlantOut:
         )
         if st_result.data:
             soil_type = SoilTypeOut(**st_result.data)
-    return PlantOut(**plant_row, sensors=sensors, soil_type=soil_type)
+
+    plant_type = None
+    if plant_row.get("plant_type_id"):
+        pt_result = (
+            supabase.table("plant_types")
+            .select("*")
+            .eq("id", plant_row["plant_type_id"])
+            .maybe_single()
+            .execute()
+        )
+        if pt_result.data:
+            plant_type = PlantTypeOut(**pt_result.data)
+
+    return PlantOut(**plant_row, sensors=sensors, soil_type=soil_type, plant_type=plant_type)
 
 
 def _get_plant_sensors(plant_id: str) -> list[SensorOut]:
@@ -299,6 +367,8 @@ async def create_plant(body: PlantCreate):
         row["planted_date"] = row["planted_date"].isoformat()
     if "soil_type_id" in row:
         row["soil_type_id"] = str(row["soil_type_id"])
+    if "plant_type_id" in row:
+        row["plant_type_id"] = str(row["plant_type_id"])
     result = supabase.table("plants").insert(row).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create plant")
@@ -314,6 +384,8 @@ async def update_plant(plant_id: UUID, body: PlantUpdate):
         updates["planted_date"] = updates["planted_date"].isoformat()
     if "soil_type_id" in updates and updates["soil_type_id"] is not None:
         updates["soil_type_id"] = str(updates["soil_type_id"])
+    if "plant_type_id" in updates and updates["plant_type_id"] is not None:
+        updates["plant_type_id"] = str(updates["plant_type_id"])
 
     result = (
         supabase.table("plants")

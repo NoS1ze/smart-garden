@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plant, Sensor, SoilType } from '../types';
+import { Plant, Sensor, SoilType, PlantType } from '../types';
 import { MetricChart } from './MetricChart';
 import { AlertsPanel } from './AlertsPanel';
 import { AlertHistory } from './AlertHistory';
@@ -16,12 +16,13 @@ export function PlantDetail({ plantId, onBack }: Props) {
   const [allSensors, setAllSensors] = useState<Sensor[]>([]);
   const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set());
   const [soilTypes, setSoilTypes] = useState<SoilType[]>([]);
+  const [plantTypes, setPlantTypes] = useState<PlantType[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Editing state
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editSpecies, setEditSpecies] = useState('');
+  const [editPlantTypeId, setEditPlantTypeId] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editPhoto, setEditPhoto] = useState('');
   const [editNotes, setEditNotes] = useState('');
@@ -46,7 +47,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
       const data: Plant = await res.json();
       setPlant(data);
       setEditName(data.name);
-      setEditSpecies(data.species ?? '');
+      setEditPlantTypeId(data.plant_type_id ?? '');
       setEditDate(data.planted_date ?? '');
       setEditPhoto(data.photo_url ?? '');
       setEditNotes(data.notes ?? '');
@@ -92,20 +93,31 @@ export function PlantDetail({ plantId, onBack }: Props) {
     }
   }, [apiUrl]);
 
+  const fetchPlantTypes = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/plant-types`);
+      if (!res.ok) return;
+      const body = await res.json();
+      setPlantTypes(body.data ?? []);
+    } catch {
+      // ignore
+    }
+  }, [apiUrl]);
+
   useEffect(() => {
     async function load() {
-      await Promise.all([fetchPlant(), fetchSensors(), fetchSoilTypes()]);
+      await Promise.all([fetchPlant(), fetchSensors(), fetchSoilTypes(), fetchPlantTypes()]);
       setLoading(false);
     }
     load();
-  }, [fetchPlant, fetchSensors, fetchSoilTypes]);
+  }, [fetchPlant, fetchSensors, fetchSoilTypes, fetchPlantTypes]);
 
   const savePlant = async () => {
     setSaving(true);
     setError(null);
     try {
       const body: Record<string, string | null> = { name: editName.trim() };
-      body.species = editSpecies.trim() || null;
+      body.plant_type_id = editPlantTypeId || null;
       body.planted_date = editDate || null;
       body.photo_url = editPhoto.trim() || null;
       body.notes = editNotes.trim() || null;
@@ -224,8 +236,15 @@ export function PlantDetail({ plantId, onBack }: Props) {
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} />
               </label>
               <label>
-                Species
-                <input value={editSpecies} onChange={(e) => setEditSpecies(e.target.value)} />
+                Plant Type
+                <select value={editPlantTypeId} onChange={(e) => setEditPlantTypeId(e.target.value)}>
+                  <option value="">None</option>
+                  {plantTypes.map((pt) => (
+                    <option key={pt.id} value={pt.id}>
+                      {pt.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Planted Date
@@ -260,7 +279,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
           ) : (
             <>
               <h2>{plant.name}</h2>
-              {plant.species && <p className="plant-detail-species">{plant.species}</p>}
+              {plant.plant_type && <p className="plant-detail-species">{plant.plant_type.name}</p>}
               {plant.planted_date && (
                 <p className="plant-detail-date">
                   Planted {new Date(plant.planted_date).toLocaleDateString()}
@@ -350,7 +369,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
           {sensors.map((s) => (
             <div key={s.id} className="sensor-chart-block">
               <h4>{s.display_name || s.mac_address}</h4>
-              <MetricChart sensorId={s.id} soilType={plant?.soil_type} />
+              <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantType={plant?.plant_type} />
             </div>
           ))}
         </section>
