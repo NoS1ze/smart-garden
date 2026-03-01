@@ -33,21 +33,76 @@ def _raw_to_percent(raw: float, raw_dry: int = 800, raw_wet: int = 400) -> float
     return max(0.0, min(100.0, pct))
 
 
+def _get_soil_calibration(sensor_id: str) -> tuple[int, int]:
+    """Look up the correct soil calibration for a sensor based on its adc_bits
+    and the associated plant's soil type."""
+    sensor_result = (
+        supabase.table("sensors")
+        .select("adc_bits")
+        .eq("id", sensor_id)
+        .maybe_single()
+        .execute()
+    )
+    adc_bits = sensor_result.data.get("adc_bits", 10) if sensor_result.data else 10
+
+    # Default calibration based on ADC resolution
+    raw_dry = 800 if adc_bits == 10 else 3200
+    raw_wet = 400 if adc_bits == 10 else 600
+
+    # Try to get plant-specific soil type calibration
+    plant_result = (
+        supabase.table("sensor_plant")
+        .select("plant_id")
+        .eq("sensor_id", sensor_id)
+        .limit(1)
+        .execute()
+    )
+    if plant_result.data:
+        plant_id = plant_result.data[0]["plant_id"]
+        plant = (
+            supabase.table("plants")
+            .select("soil_type_id")
+            .eq("id", plant_id)
+            .maybe_single()
+            .execute()
+        )
+        if plant.data and plant.data.get("soil_type_id"):
+            st = (
+                supabase.table("soil_types")
+                .select("*")
+                .eq("id", plant.data["soil_type_id"])
+                .maybe_single()
+                .execute()
+            )
+            if st.data:
+                if adc_bits == 12:
+                    raw_dry = st.data.get("raw_dry_12bit", 3200)
+                    raw_wet = st.data.get("raw_wet_12bit", 600)
+                else:
+                    raw_dry = st.data.get("raw_dry", 800)
+                    raw_wet = st.data.get("raw_wet", 400)
+
+    return raw_dry, raw_wet
+
+
 def check_alerts(sensor_id: str, readings: list[dict]) -> int:
     """Check active alerts for the given sensor and readings.
 
     Returns the number of alerts triggered (emails sent).
     For soil_moisture, raw values are converted to percentages using
-    default calibration before comparing against thresholds.
+    sensor-specific calibration before comparing against thresholds.
     """
     triggered = 0
+
+    # Get correct calibration for this sensor
+    raw_dry, raw_wet = _get_soil_calibration(sensor_id)
 
     for reading in readings:
         metric = reading["metric"]
         value = reading["value"]
 
         # For soil_moisture, convert raw → % for threshold comparison
-        compare_value = _raw_to_percent(value) if metric == "soil_moisture" else value
+        compare_value = _raw_to_percent(value, raw_dry, raw_wet) if metric == "soil_moisture" else value
 
         # Fetch active alert rules matching this sensor + metric
         result = (

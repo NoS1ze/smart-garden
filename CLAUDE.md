@@ -19,60 +19,103 @@ Web Dashboard reads from Supabase
 
 ## Hardware
 
-### Current Setup
-- **Microcontroller**: Lolin NodeMCU V3 (ESP8266, not ESP32)
-  - Note: ESP8266 has only ONE analog pin (A0), plan accordingly
-  - Deep sleep via GPIO16 connected to RST pin
+### Board 1: NodeMCU V3 (ESP8266) — "NodeMCU"
+- **MCU**: ESP8266 (Lolin NodeMCU V3), 80MHz, WiFi only
+- **MAC**: 8C:CE:4E:CE:66:15
+- **USB**: CH340 on `/dev/cu.wchusbserial10`
+- **FQBN**: `esp8266:esp8266:nodemcuv2`
+- **Firmware**: `firmware/combined/combined.ino` (also `firmware/soil_moisture/`)
+- **Sleep interval**: 5 minutes
+- **ADC**: 10-bit (0-1023), single pin A0
+- **Deep sleep**: GPIO16 jumpered to RST
 
-- **Sensor 1: Capacitive Soil Moisture Sensor v2.0** (analog)
-  - VCC (red) → D5 (GPIO14, power pin — allows turning sensor off between readings)
-  - GND (black) → G
-  - AOUT (yellow) → A0
-  - Returns analog value: ~800+ = dry, ~400 = wet (calibrate per sensor)
-  - Powered via D5 to save power — turn on, wait 100ms, read, turn off
+**Sensors:**
+- Capacitive Soil Moisture v2.0: A0 (analog), powered via D1 (GPIO5) — turn on, wait 100ms, read, turn off
+  - Raw calibration: ~800 = dry, ~400 = wet
+- CJMCU-8118 / HDC1080: I2C on D1/D2 (SCL=GPIO5, SDA=GPIO4) — temperature + humidity
+  - CCS811 on same board is defective — not used
 
-- **Sensor 2: CJMCU-8118 board — HDC1080 temperature/humidity** (I2C)
-  - VCC → 3V3 (no onboard regulator — must be 3.3V)
-  - GND → G
-  - SDA → D2 (GPIO4)
-  - SCL → D1 (GPIO5)
-  - WAK → G (tie low)
-  - HDC1080 at I2C address 0x40 — provides temperature (°C) and humidity (%)
-  - CCS811 (eCO2/TVOC) on same board is defective/non-responsive — not used
+**Power notes:**
+- AMS1117 regulator draws ~5-10mA quiescent even during deep sleep
+- Estimated 18650 runtime: ~10 days (dominated by regulator quiescent current)
+
+### Board 2: DIY MORE ESP32 — "DIY MORE"
+- **MCU**: ESP32-D0WDQ6 rev v1.0, Dual Core 240MHz, WiFi + BT
+- **MAC**: 08:B6:1F:8E:C7:E0
+- **USB**: CH340 on `/dev/cu.usbserial-0001`
+- **FQBN**: `esp32:esp32:esp32`
+- **Firmware**: `firmware/diymore/diymore.ino`
+- **Sleep interval**: 1 hour
+- **ADC**: 12-bit (0-4095)
+- **Deep sleep**: Internal RTC timer (no external wiring)
+- **Battery**: Built-in 18650 holder
+
+**Sensors (hardwired to VCC on PCB — cannot be powered off via GPIO):**
+- DHT11: GPIO22 — temperature + humidity
+- Capacitive Soil Moisture: GPIO33 (ADC1_CH5) — analog
+  - Raw calibration: ~3200 = dry, ~600 = wet
+
+**Power notes:**
+- Sensors always on (~3mA constant drain during deep sleep)
+- Estimated 18650 runtime: ~30-35 days (1hr interval, sensors always powered)
+
+### Board 3: NodeMCU V3 (ESP8266) + ENS160/AHT21 — "NodeMCU ENS160"
+- **MCU**: ESP8266 (Lolin NodeMCU V3), 80MHz, WiFi only
+- **MAC**: 18:FE:34:FB:CF:70
+- **USB**: CH340 on `/dev/cu.wchusbserial110`
+- **FQBN**: `esp8266:esp8266:nodemcuv2`
+- **Firmware**: `firmware/nodemcu_bme680/nodemcu_bme680.ino`
+- **Sleep interval**: 1 hour
+- **ADC**: 10-bit (0-1023), single pin A0
+- **Deep sleep**: GPIO16 jumpered to RST
+
+**Sensors:**
+- ENS160: I2C on D1/D2 (SCL=GPIO5, SDA=GPIO4), address 0x52 — eCO2 (ppm) + TVOC (ppb)
+- AHT21: I2C on D1/D2, address 0x38 — temperature + humidity
+- Capacitive Soil Moisture v2.0: A0 (analog), powered via D5 (GPIO14) — turn on, wait 100ms, read, turn off
+  - Raw calibration: ~800 = dry, ~400 = wet
+
+**Wiring:**
+```
+NodeMCU V3          ENS160+AHT21 Breakout
+---------           ---------------------
+3V3         ------> VIN
+GND         ------> GND
+D1 (GPIO5)  ------> SCL
+D2 (GPIO4)  ------> SDA
+
+NodeMCU V3          Capacitive Soil Moisture v2.0
+---------           -----------------------------
+D5 (GPIO14) ------> VCC (power control)
+GND         ------> GND
+A0          ------> AOUT (analog signal)
+
+Deep sleep: D0 (GPIO16) → RST
+Power: 18650 battery → VIN + GND
+```
 
 ### Planned Sensors (not yet connected)
 - Light (BH1750, I2C — can share D1/D2 bus)
 - CO2 (standalone CCS811 breakout or MH-Z19 to replace defective onboard CCS811)
 
-### Power Notes
-- NodeMCU V3 deep sleep: GPIO16 must be jumpered to RST
-- ESP8266 only has 1 analog pin (A0) — future sensors should be digital/I2C
-- D5 used as power switch for moisture sensor to reduce corrosion and save power
-- D1/D2 used for I2C bus (SCL/SDA) — shared by HDC1080 and future I2C sensors
-```
-
 ---
 
-Also update the firmware agent prompt — replace the firmware section with:
-```
-Build ESP8266 Arduino firmware in /firmware:
+## Firmware
 
-- firmware/soil_moisture/soil_moisture.ino — current working sketch
-- firmware/config.h.example
+All boards follow the same wake cycle:
+1. Wake from deep sleep → connect WiFi (timeout: 10-15s) → sync NTP → read sensors
+2. POST JSON to `/api/readings`: `{"mac": "XX:XX:...", "readings": [...], "recorded_at": <epoch>}`
+3. Disconnect WiFi → deep sleep for N seconds (from `config.h`)
 
-Sketch must:
-- Wake from deep sleep (GPIO16 jumpered to RST)
-- Turn on sensor via D1 (digitalWrite HIGH)
-- Wait 100ms for sensor to stabilize
-- Read A0 analog value (0-1023)
-- Send raw ADC value (no percentage conversion — frontend handles calibration via soil types)
-- POST JSON to /api/readings:
-  {"mac": "XX:XX:XX:XX:XX:XX", "readings": [{"metric": "soil_moisture", "value": 652}], "recorded_at": <unix epoch>}
-- Turn off sensor via D1
-- Deep sleep for N seconds (from config.h)
+Firmware sends raw ADC values for soil_moisture — frontend handles calibration via soil types.
 
-Note: No RTC on NodeMCU — get Unix timestamp from NTP before posting.
-Include wiring diagram and required libraries as comments.
+| Board | Sketch | ADC range | Sleep | board_type slug |
+|-------|--------|-----------|-------|-----------------|
+| NodeMCU + HDC1080 | `firmware/soil_moisture/` | 0-1023 (10-bit) | 1 hour | `nodemcu_hdc1080` |
+| DIY MORE + DHT11 | `firmware/diymore/` | 0-4095 (12-bit) | 1 hour | `diymore_dht11` |
+| NodeMCU + ENS160/AHT21 | `firmware/nodemcu_bme680/` | 0-1023 (10-bit) | 1 hour | `nodemcu_ens160_aht21` |
+
+Each sketch directory has its own `config.h` (gitignored) and `config.h.example`.
 
 ## Tech Stack
 - **Backend**: Python FastAPI (thin layer for ingestion + alerts)
@@ -93,11 +136,29 @@ CLAUDE.md         This file
 
 ## Database Schema (Supabase)
 
+Table: `board_types`
+- id (uuid, primary key)
+- name (text, unique, not null) — e.g. "NodeMCU V3 + HDC1080"
+- slug (text, unique, not null) — firmware sends this in POST payload, e.g. "nodemcu_hdc1080"
+- mcu (text, not null) — e.g. "ESP8266", "ESP32-D0WDQ6"
+- fqbn (text) — Arduino CLI board identifier
+- adc_bits (smallint, default 10)
+- sleep_seconds (int, default 300)
+- sensors (jsonb, default '[]') — array of sensor chip info objects
+- notes (text)
+- created_at (timestamptz)
+
+JSONB `sensors` format per chip:
+```json
+{"chip": "BME680", "interface": "i2c", "address": "0x76", "pins": "D1/D2", "metrics": ["temperature", "humidity", "pressure_hpa"]}
+```
+
 Table: `sensors`
 - id (uuid, primary key)
 - mac_address (text, unique, not null) — immutable hardware identifier from ESP8266 WiFi.macAddress()
 - display_name (text, nullable) — user-settable friendly name; frontend shows this, falls back to mac_address
 - location (text)
+- board_type_id (uuid, FK → board_types.id, ON DELETE SET NULL) — auto-set from firmware `board_type` slug
 - created_at (timestamp)
 
 Table: `readings`
@@ -173,19 +234,30 @@ Table: `sensor_plant` (junction table)
 ## API Endpoints (FastAPI)
 
 ### Readings
-- `POST /api/readings` — ESP8266 posts data here. Backend looks up sensor by MAC, auto-registers if unknown.
+- `POST /api/readings` — ESP posts data here. Backend looks up sensor by MAC, auto-registers if unknown. Sets `board_type_id` from slug.
 ```json
   {
     "mac": "8C:CE:4E:CE:66:15",
     "readings": [
-      {"metric": "soil_moisture", "value": 45.0}
+      {"metric": "soil_moisture", "value": 665},
+      {"metric": "temperature", "value": 22.3},
+      {"metric": "humidity", "value": 48.1}
     ],
-    "recorded_at": 1708789200
+    "recorded_at": 1708789200,
+    "adc_bits": 10,
+    "board_type": "nodemcu_hdc1080"
   }
 ```
   Auto-registration: if mac not found in sensors table, create new sensor with mac_address=mac, display_name=null.
   Then insert readings using that sensor's UUID.
+  Metrics: soil_moisture, temperature, humidity, co2_ppm, tvoc_ppb, pressure_hpa, light_lux
 - `GET /api/readings?sensor_id=x&from=date&to=date&metric=x&limit=100&offset=0`
+
+### Board Types
+- `GET /api/board-types` — list all board types with JSONB sensor metadata
+- `POST /api/board-types` — create board type {name, slug, mcu, fqbn?, adc_bits?, sleep_seconds?, sensors?, notes?}
+- `PUT /api/board-types/{id}` — update board type
+- `DELETE /api/board-types/{id}` — delete board type (sensors revert to null)
 
 ### Sensors
 - `GET /api/sensors` — list all sensors (returns mac_address, display_name, location)
@@ -217,17 +289,14 @@ Table: `sensor_plant` (junction table)
 - `POST /api/plants/{plant_id}/sensors` — associate sensor {sensor_id}
 - `DELETE /api/plants/{plant_id}/sensors/{sensor_id}` — unassociate sensor
 
-## ESP8266 Power Strategy
-- Deep sleep between readings
-- On wake cycle:
-  1. Connect WiFi (with timeout — give up after 10s to save battery)
-  2. Read all sensors
-  3. POST to /api/readings with MAC address (single request with all metrics)
-  4. Disconnect WiFi
-  5. Deep sleep for N seconds
+## Power Strategy
+- All boards deep sleep between readings
+- Wake cycle: WiFi connect → NTP sync → sensor read → HTTP POST → sleep
 - All readings posted in ONE request per wake cycle (minimizes WiFi on-time)
 - MAC address sent with every POST — backend auto-registers unknown boards
-- config.h stores: WiFi credentials, API endpoint, sleep interval (NO sensor_id — MAC is used instead)
+- `config.h` stores: WiFi credentials, API endpoint, sleep interval (NO sensor_id — MAC is used instead)
+- NodeMCU: sensor powered off between readings (D1 pin), 5 min cycle
+- DIY MORE: sensors hardwired to VCC (always on), 1 hour cycle
 
 ## Alert Logic (backend)
 - After saving readings, check all active alert rules for that sensor
@@ -264,18 +333,21 @@ VITE_API_URL=
 ```
 
 ## Soil Type Calibration
-- Firmware sends raw ADC values (0-1023) for soil_moisture
-- Frontend converts raw → % using `rawToPercent(raw, rawDry, rawWet)` from soil type calibration
-- Default calibration: rawDry=800, rawWet=400 (used when no soil type assigned)
-- Soil types are CRUD-managed via `/api/soil-types` and associated per-plant
-- Alerts: backend converts raw → % using default calibration for threshold comparison
-- Data migration: when reflashing firmware, run `UPDATE readings SET value = 800.0 - (value / 100.0) * 400.0 WHERE metric = 'soil_moisture';` to convert existing percentage values to raw
+- Firmware sends raw ADC values + `adc_bits` (10 or 12) in POST payload
+- `sensors` table has `adc_bits` column (10 or 12), auto-set from firmware payload
+- `soil_types` table stores dual calibration: `raw_dry`/`raw_wet` (10-bit) and `raw_dry_12bit`/`raw_wet_12bit` (12-bit)
+- Default 10-bit: rawDry=800, rawWet=400 | Default 12-bit: rawDry=3200, rawWet=600
+- Frontend `getCalibration(soilType, adcBits)` picks the correct pair based on sensor's `adc_bits`
+- Alerts: backend looks up sensor's `adc_bits` + plant's soil type for correct calibration
 
 ## Current Status
 - [x] Supabase project created + schema applied
 - [x] Backend API — FastAPI, all endpoints, Pydantic validation, CORS
 - [x] Alert engine — cooldown check, SendGrid email, alert_history logging
 - [x] ESP8266 firmware — soil_moisture + temp/humidity posting every 5 min (deep sleep)
+- [x] ESP32 DIY MORE firmware — soil_moisture + temp/humidity posting every 1 hour (deep sleep)
+- [x] NodeMCU ENS160/AHT21 firmware — soil_moisture + temp/humidity + eCO2/TVOC posting every 1 hour (deep sleep)
+- [x] Board types system — board_types table with JSONB sensor metadata, CRUD API, frontend display
 - [x] Frontend dashboard v1 — sensor-centric, working
 - [x] Deployment config — Dockerfile + railway.toml + render.yaml (backend); vercel.json + netlify.toml (frontend)
 - [x] Feature: Board rename (MAC-based identification + display_name)
@@ -289,18 +361,34 @@ VITE_API_URL=
 
 ## Firmware Deployment
 - `arduino-cli` is installed via Homebrew (`/opt/homebrew/bin/arduino-cli`)
-- Board: NodeMCU V3 on `/dev/cu.wchusbserial10` (CH340 USB-serial)
-- ESP8266 core `esp8266:esp8266` v3.1.2 installed
+- Cores installed: `esp8266:esp8266` v3.1.2, `esp32:esp32` v3.0.7
+- `config.h` lives in each sketch directory (gitignored) — contains WiFi creds, API endpoint, sleep interval
+
+### NodeMCU (ESP8266)
+- Port: `/dev/cu.wchusbserial10`
 - FQBN: `esp8266:esp8266:nodemcuv2`
-- Firmware source: `firmware/soil_moisture/` (in this repo)
-- `config.h` lives in the sketch directory (gitignored) — contains WiFi creds, API endpoint, OTA password
-- Compile: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 /path/to/soil_moisture`
-- Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial10 /path/to/soil_moisture`
-- Board must be awake to flash — hold FLASH + press RST, then release FLASH to enter bootloader
-- OTA updates also supported (10s window after each wake) — password in config.h
+- Compile: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 firmware/soil_moisture`
+- Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial10 firmware/soil_moisture`
+- Board must be awake to flash — hold FLASH + press RST, then release FLASH
+
+### NodeMCU + ENS160/AHT21 (ESP8266)
+- Port: `/dev/cu.wchusbserial110`
+- FQBN: `esp8266:esp8266:nodemcuv2`
+- Compile: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 firmware/nodemcu_bme680`
+- Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial110 firmware/nodemcu_bme680`
+- Board must be awake to flash — hold FLASH + press RST, then release FLASH
+- Libraries: NTPClient, ArduinoJson v7, Adafruit AHTX0, ScioSense_ENS16x
+
+### DIY MORE (ESP32)
+- Port: `/dev/cu.usbserial-0001`
+- FQBN: `esp32:esp32:esp32`
+- Compile: `arduino-cli compile --fqbn esp32:esp32:esp32 firmware/diymore`
+- Upload: `arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/cu.usbserial-0001 firmware/diymore`
+- Hold BOOT button while uploading if auto-reset doesn't work
 
 ## Notes
-- Existing sensor MAC: 8C:CE:4E:CE:66:15 (UUID: cd4d94f1-7ab2-42be-8b42-063aea049f49)
+- NodeMCU sensor MAC: 8C:CE:4E:CE:66:15 (UUID: cd4d94f1-7ab2-42be-8b42-063aea049f49)
+- DIY MORE sensor MAC: 08:B6:1F:8E:C7:E0 (auto-registers on first POST)
 - Supabase project ref: snmhepqybhjuzoavefyr
 - Alert deletion uses DELETE /api/alerts/{id} — frontend calls backend, NOT Supabase directly
 - POST /api/readings now uses "mac" field instead of "sensor_id" — breaking change, firmware already reflashed

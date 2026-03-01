@@ -1,18 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Sensor } from '../types';
+import { Sensor, BoardType } from '../types';
+import { supabase } from '../lib/supabase';
+import { timeAgo } from '../lib/calibration';
 
 const apiUrl = import.meta.env.VITE_API_URL || '';
 
-const SENSOR_TYPES = [
-  { id: 'soil', label: 'Soil Moisture', icon: '🌱' },
-  { id: 'ambient', label: 'Ambient (Temp/Hum)', icon: '🌡️' },
-  { id: 'light', label: 'Light/Lux', icon: '☀️' },
-  { id: 'all-in-one', label: 'All-in-One', icon: '🤖' },
-  { id: 'co2', label: 'CO2 Sensor', icon: '☁️' },
-];
+const METRIC_LABELS: Record<string, string> = {
+  soil_moisture: 'Moisture',
+  temperature: 'Temp',
+  humidity: 'Humidity',
+  pressure_hpa: 'Pressure',
+  light_lux: 'Light',
+  co2_ppm: 'CO₂',
+  tvoc_ppb: 'TVOC',
+};
 
 export function SensorManager() {
   const [sensors, setSensors] = useState<Sensor[]>([]);
+  const [boardTypes, setBoardTypes] = useState<BoardType[]>([]);
+  const [sensorMetrics, setSensorMetrics] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,14 +26,38 @@ export function SensorManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editLocation, setEditLocation] = useState('');
-  const [editType, setEditType] = useState('');
+  const [editBoardTypeId, setEditBoardTypeId] = useState('');
+
+  const fetchBoardTypes = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/board-types`);
+      if (res.ok) {
+        const body = await res.json();
+        setBoardTypes(body.data ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const fetchSensors = useCallback(async () => {
     try {
       const res = await fetch(`${apiUrl}/api/sensors`);
       if (!res.ok) throw new Error('Failed to fetch sensors');
       const body = await res.json();
-      setSensors(body.data ?? []);
+      const sensorList: Sensor[] = body.data ?? [];
+      setSensors(sensorList);
+
+      // Fetch distinct metrics per sensor in parallel
+      const entries = await Promise.all(
+        sensorList.map(async (s) => {
+          const { data } = await supabase
+            .from('readings')
+            .select('metric')
+            .eq('sensor_id', s.id);
+          const unique = data ? [...new Set(data.map((d: { metric: string }) => d.metric))] : [];
+          return [s.id, unique] as const;
+        })
+      );
+      setSensorMetrics(Object.fromEntries(entries));
     } catch (e: any) {
       setError(e.message);
     }
@@ -36,7 +66,8 @@ export function SensorManager() {
 
   useEffect(() => {
     fetchSensors();
-  }, [fetchSensors]);
+    fetchBoardTypes();
+  }, [fetchSensors, fetchBoardTypes]);
 
   const handleUpdate = async (id: string) => {
     setError(null);
@@ -47,7 +78,8 @@ export function SensorManager() {
         body: JSON.stringify({
           display_name: editName.trim() || null,
           location: editLocation.trim(),
-          sensor_type: editType || null,
+          sensor_type: null,
+          board_type_id: editBoardTypeId || null,
         }),
       });
       if (!res.ok) {
@@ -80,11 +112,7 @@ export function SensorManager() {
     setEditingId(s.id);
     setEditName(s.display_name ?? '');
     setEditLocation(s.location);
-    setEditType(s.sensor_type ?? '');
-  };
-
-  const getSensorIcon = (type: string | null) => {
-    return SENSOR_TYPES.find(t => t.id === type)?.icon || '📟';
+    setEditBoardTypeId(s.board_type_id ?? '');
   };
 
   if (loading) return <p className="status">Loading sensors...</p>;
@@ -102,7 +130,7 @@ export function SensorManager() {
           <p className="status">No sensors found. Power on an ESP8266 to auto-register.</p>
         ) : (
           sensors.map((s) => (
-            <div key={s.id} className="sensor-manage-card">
+            <div key={s.id} className="sensor-tile">
               {editingId === s.id ? (
                 <div className="sensor-edit-form">
                   <div className="form-group">
@@ -122,11 +150,11 @@ export function SensorManager() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Sensor Type</label>
-                    <select value={editType} onChange={(e) => setEditType(e.target.value)}>
-                      <option value="">Unknown</option>
-                      {SENSOR_TYPES.map(t => (
-                        <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
+                    <label>Board Type</label>
+                    <select value={editBoardTypeId} onChange={(e) => setEditBoardTypeId(e.target.value)}>
+                      <option value="">None</option>
+                      {boardTypes.map((bt) => (
+                        <option key={bt.id} value={bt.id}>{bt.name}</option>
                       ))}
                     </select>
                   </div>
@@ -138,22 +166,47 @@ export function SensorManager() {
               ) : (
                 <>
                   <div className="sensor-card-header">
-                    <span className="sensor-type-icon" title={s.sensor_type || 'Unknown'}>
-                      {getSensorIcon(s.sensor_type)}
-                    </span>
                     <div className="sensor-ident">
                       <h3>{s.display_name || 'Unnamed Sensor'}</h3>
                       <code>{s.mac_address}</code>
                     </div>
+                    <span className="status-dot" />
                   </div>
                   <div className="sensor-details">
+                    {s.board_type && (
+                      <div className="board-type-info">
+                        <span className="board-type-badge">{s.board_type.name}</span>
+                        <span className="board-mcu-badge">{s.board_type.mcu}</span>
+                        <span className="board-adc-badge">{s.board_type.adc_bits}-bit</span>
+                      </div>
+                    )}
+                    {s.board_type?.sensors && s.board_type.sensors.length > 0 && (
+                      <div className="board-chips">
+                        {s.board_type.sensors.map((chip, i) => (
+                          <span key={i} className="chip-badge" title={`${chip.interface} on ${chip.pins}`}>
+                            {chip.chip}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <p><strong>Location:</strong> {s.location || 'N/A'}</p>
-                    <p><strong>Type:</strong> {SENSOR_TYPES.find(t => t.id === s.sensor_type)?.label || 'Unknown'}</p>
+                    <p><strong>Active:</strong> {(sensorMetrics[s.id] ?? []).map(m => METRIC_LABELS[m] || m).join(', ') || 'None detected'}</p>
+                    {s.last_seen_at && (() => {
+                      const { text, staleness } = timeAgo(s.last_seen_at);
+                      return (
+                        <p className="sensor-date">
+                          <span className="staleness-indicator">
+                            <span className={`staleness-dot ${staleness}`} />
+                            Last seen {text}
+                          </span>
+                        </p>
+                      );
+                    })()}
                     <p className="sensor-date">Added {new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className="sensor-actions">
                     <button className="btn-small btn-secondary" onClick={() => startEdit(s)}>Edit</button>
-                    <button className="btn-small delete-btn" onClick={() => handleDelete(s.id)}>Delete</button>
+                    <button className="btn-small btn-danger" onClick={() => handleDelete(s.id)}>Delete</button>
                   </div>
                 </>
               )}

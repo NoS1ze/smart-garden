@@ -198,6 +198,8 @@ void setup() {
   doc["mac"] = macAddress;
   JsonArray readings = doc["readings"].to<JsonArray>();
   doc["recorded_at"] = epochTime;
+  doc["adc_bits"] = 10;
+  doc["board_type"] = "nodemcu_hdc1080";
 
   // Soil moisture (always active)
   JsonObject soilReading = readings.add<JsonObject>();

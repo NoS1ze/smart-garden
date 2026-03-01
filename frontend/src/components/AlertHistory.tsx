@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { AlertHistoryEntry, Alert } from '../types';
+import { AlertHistoryEntry, Alert, METRICS } from '../types';
+import { timeAgo } from '../lib/calibration';
 
 interface Props {
   sensorId: string;
@@ -56,7 +57,11 @@ export function AlertHistory({ sensorId }: Props) {
       {loading ? (
         <p className="status">Loading...</p>
       ) : history.length === 0 ? (
-        <p className="status">No triggered alerts.</p>
+        <div className="empty-state-card">
+          <div className="empty-icon positive">&#10003;</div>
+          <div className="empty-text">No alerts triggered</div>
+          <div className="empty-subtext">All readings have been within range.</div>
+        </div>
       ) : (
         <table className="history-table">
           <thead>
@@ -71,8 +76,10 @@ export function AlertHistory({ sensorId }: Props) {
           <tbody>
             {history.map((h) => (
               <tr key={h.id}>
-                <td>{new Date(h.triggered_at).toLocaleString()}</td>
-                <td>{h.alert?.metric ?? '—'}</td>
+                <td title={new Date(h.triggered_at).toLocaleString()}>
+                  {timeAgo(h.triggered_at).text}
+                </td>
+                <td>{h.alert?.metric ? (METRICS.find(m => m.key === h.alert!.metric)?.label ?? h.alert.metric) : '—'}</td>
                 <td>{h.alert?.condition ?? '—'}</td>
                 <td>{h.alert?.threshold ?? '—'}</td>
                 <td>{h.value_at_trigger}</td>

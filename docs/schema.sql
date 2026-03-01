@@ -14,7 +14,7 @@ create table if not exists sensors (
 create table if not exists readings (
   id          uuid primary key default gen_random_uuid(),
   sensor_id   uuid not null references sensors(id) on delete cascade,
-  metric      text not null check (metric in ('temperature','humidity','soil_moisture','light_lux','co2_ppm')),
+  metric      text not null check (metric in ('temperature','humidity','soil_moisture','light_lux','co2_ppm','pressure_hpa')),
   value       float not null,
   recorded_at timestamptz not null
 );
@@ -22,7 +22,7 @@ create table if not exists readings (
 create table if not exists alerts (
   id          uuid primary key default gen_random_uuid(),
   sensor_id   uuid not null references sensors(id) on delete cascade,
-  metric      text not null check (metric in ('temperature','humidity','soil_moisture','light_lux','co2_ppm')),
+  metric      text not null check (metric in ('temperature','humidity','soil_moisture','light_lux','co2_ppm','pressure_hpa')),
   condition   text not null check (condition in ('above','below')),
   threshold   float not null,
   email       text not null,
@@ -67,6 +67,10 @@ create table if not exists plant_species (
   max_co2              float,
   optimal_min_co2      float,
   optimal_max_co2      float,
+  min_pressure         float,
+  max_pressure         float,
+  optimal_min_pressure float,
+  optimal_max_pressure float,
   created_at           timestamptz not null default now()
 );
 

@@ -110,6 +110,8 @@ void setup() {
   reading["metric"] = "soil_moisture";
   reading["value"] = round(moisture * 10.0) / 10.0;
   doc["recorded_at"] = epochTime;
+  doc["adc_bits"] = 10;
+  doc["board_type"] = "nodemcu_hdc1080";
 
   String payload;
   serializeJson(doc, payload);

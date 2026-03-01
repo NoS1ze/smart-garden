@@ -113,7 +113,8 @@ export function PlantSpeciesManager() {
                       'min_humidity', 'max_humidity', 'optimal_min_humidity', 'optimal_max_humidity',
                       'min_moisture', 'max_moisture', 'optimal_min_moisture', 'optimal_max_moisture',
                       'min_light', 'max_light', 'optimal_min_light', 'optimal_max_light',
-                      'min_co2', 'max_co2', 'optimal_min_co2', 'optimal_max_co2'];
+                      'min_co2', 'max_co2', 'optimal_min_co2', 'optimal_max_co2',
+                      'min_pressure', 'max_pressure', 'optimal_min_pressure', 'optimal_max_pressure'];
     suffixes.forEach(s => {
       ranges[s] = ps[s as keyof PlantSpecies] !== null ? String(ps[s as keyof PlantSpecies]) : '';
     });
@@ -125,6 +126,7 @@ export function PlantSpeciesManager() {
       { label: 'Temp (°C)', prefix: 'temp' },
       { label: 'Humidity (%)', prefix: 'humidity' },
       { label: 'Moisture (%)', prefix: 'moisture' },
+      { label: 'Pressure (hPa)', prefix: 'pressure' },
       { label: 'Light (lux)', prefix: 'light' },
       { label: 'CO2 (ppm)', prefix: 'co2' },
     ];
@@ -202,19 +204,36 @@ export function PlantSpeciesManager() {
                       <button className="btn-small delete-btn" onClick={() => handleDelete(ps.id)}>Delete</button>
                     </div>
                   </div>
-                  <div className="ranges-summary">
-                    {['temp', 'humidity', 'moisture', 'light', 'co2'].map(m => {
-                      const min = ps[`min_${m}` as keyof PlantSpecies];
-                      const max = ps[`max_${m}` as keyof PlantSpecies];
-                      const optMin = ps[`optimal_min_${m}` as keyof PlantSpecies];
-                      const optMax = ps[`optimal_max_${m}` as keyof PlantSpecies];
-                      if (min === null && max === null && optMin === null && optMax === null) return null;
+                  <div className="species-metrics">
+                    {([
+                      { key: 'temp', label: 'Temp', scaleMin: 0, scaleMax: 50, color: '#ef4444' },
+                      { key: 'humidity', label: 'Humidity', scaleMin: 0, scaleMax: 100, color: '#60a5fa' },
+                      { key: 'moisture', label: 'Moisture', scaleMin: 0, scaleMax: 100, color: '#22c55e' },
+                      { key: 'pressure', label: 'Pressure', scaleMin: 900, scaleMax: 1100, color: '#c084fc' },
+                      { key: 'light', label: 'Light', scaleMin: 0, scaleMax: 100000, color: '#f59e0b' },
+                      { key: 'co2', label: 'CO2', scaleMin: 0, scaleMax: 2000, color: '#14b8a6' },
+                    ] as const).map(m => {
+                      const optMin = ps[`optimal_min_${m.key}` as keyof PlantSpecies] as number | null;
+                      const optMax = ps[`optimal_max_${m.key}` as keyof PlantSpecies] as number | null;
+                      if (optMin === null && optMax === null) return null;
+                      const lo = optMin ?? m.scaleMin;
+                      const hi = optMax ?? m.scaleMax;
+                      const left = ((lo - m.scaleMin) / (m.scaleMax - m.scaleMin)) * 100;
+                      const width = ((hi - lo) / (m.scaleMax - m.scaleMin)) * 100;
                       return (
-                        <div key={m} className="summary-item">
-                          <span className="summary-label">{m}:</span>
-                          <span className="summary-values">
-                            {min ?? '?'} → {optMin ?? '?' } | {optMax ?? '?'} ← {max ?? '?'}
-                          </span>
+                        <div key={m.key} className="metric-row">
+                          <span className="metric-label">{m.label}</span>
+                          <div className="metric-bar-track">
+                            <div
+                              className="metric-bar-fill"
+                              style={{
+                                left: `${left}%`,
+                                width: `${width}%`,
+                                '--color': m.color,
+                              } as React.CSSProperties}
+                            />
+                          </div>
+                          <span className="metric-range">{lo}–{hi}</span>
                         </div>
                       );
                     })}

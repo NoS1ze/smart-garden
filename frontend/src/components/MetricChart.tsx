@@ -1,20 +1,31 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label
 } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { Reading, Metric, METRICS, SoilType, PlantSpecies } from '../types';
-import { rawToPercent } from '../lib/calibration';
+import { rawToPercent, timeAgo, getCalibration } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
+
+const METRIC_COLORS: Record<string, string> = {
+  soil_moisture: '#14b8a6',
+  temperature: '#f59e0b',
+  humidity: '#60a5fa',
+  pressure_hpa: '#c084fc',
+  co2_ppm: '#a78bfa',
+  tvoc_ppb: '#f472b6',
+  light_lux: '#eab308',
+};
 
 interface Props {
   sensorId: string;
   soilType?: SoilType | null;
   plantSpecies?: PlantSpecies | null;
+  adcBits?: number;
 }
 
-export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
+export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
   const [range, setRange] = useState<Range>('24h');
@@ -75,7 +86,6 @@ export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
       const metrics = new Set(data.map(d => d.metric as Metric));
       if (metrics.size > 0) {
         setAvailableMetrics(metrics);
-        // If current metric not available, switch to first available
         if (!metrics.has(metric)) {
           setMetric(Array.from(metrics)[0]);
         }
@@ -113,27 +123,111 @@ export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
     return () => clearInterval(interval);
   }, [fetchReadings, fetchLatest]);
 
+  const { rawDry, rawWet } = getCalibration(soilType, adcBits);
   const convertValue = (v: number) =>
     metric === 'soil_moisture'
-      ? rawToPercent(v, soilType?.raw_dry, soilType?.raw_wet)
+      ? rawToPercent(v, rawDry, rawWet)
       : v;
 
   const chartData = readings.map((r) => ({
-    time: new Date(r.recorded_at).toLocaleString(),
+    time: new Date(r.recorded_at).getTime(),
     value: convertValue(r.value),
   }));
 
-  const getReferenceLines = () => {
-    if (!plantSpecies) return null;
-
+  const getRefValues = (): number[] => {
+    if (!plantSpecies) return [];
     let prefix = '';
-    switch(metric) {
+    switch (metric) {
       case 'temperature': prefix = 'temp'; break;
       case 'humidity': prefix = 'humidity'; break;
       case 'soil_moisture': prefix = 'moisture'; break;
       case 'light_lux': prefix = 'light'; break;
       case 'co2_ppm': prefix = 'co2'; break;
+      case 'pressure_hpa': prefix = 'pressure'; break;
+      case 'tvoc_ppb': prefix = 'tvoc'; break;
     }
+    return [
+      plantSpecies[`min_${prefix}` as keyof PlantSpecies],
+      plantSpecies[`max_${prefix}` as keyof PlantSpecies],
+      plantSpecies[`optimal_min_${prefix}` as keyof PlantSpecies],
+      plantSpecies[`optimal_max_${prefix}` as keyof PlantSpecies],
+    ].filter((v): v is number => v !== null && v !== undefined && typeof v === 'number');
+  };
+
+  const computeYDomain = (): [number, number] | undefined => {
+    const dataValues = chartData.map(d => d.value);
+    const refValues = getRefValues();
+    const allValues = [...dataValues, ...refValues];
+    if (allValues.length === 0) return undefined;
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    const padding = (maxVal - minVal) * 0.05 || 1;
+    return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)];
+  };
+
+  const yDomain = computeYDomain();
+
+  const formatXTick = (timestamp: number) => {
+    const d = new Date(timestamp);
+    if (range === '24h') {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    if (range === '7d') {
+      const day = d.toLocaleDateString([], { weekday: 'short' });
+      const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${day} ${time}`;
+    }
+    if (range === '30d') {
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    // custom: auto-detect based on range span
+    const span = customFrom && customTo
+      ? new Date(customTo).getTime() - new Date(customFrom).getTime()
+      : 0;
+    if (span <= 86400000) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    if (span <= 604800000) {
+      const day = d.toLocaleDateString([], { weekday: 'short' });
+      const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${day} ${time}`;
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const metricColor = METRIC_COLORS[metric] || '#22c55e';
+
+  const getSpeciesPrefix = () => {
+    switch(metric) {
+      case 'temperature': return 'temp';
+      case 'humidity': return 'humidity';
+      case 'soil_moisture': return 'moisture';
+      case 'light_lux': return 'light';
+      case 'co2_ppm': return 'co2';
+      case 'pressure_hpa': return 'pressure';
+      case 'tvoc_ppb': return 'tvoc';
+      default: return '';
+    }
+  };
+
+  const refLabel = (text: string, fill: string) =>
+    (props: any) => {
+      const { viewBox } = props;
+      if (!viewBox) return null;
+      const x = (viewBox.x || 0) + 6;
+      const y = (viewBox.y || 0);
+      const w = text.length * 6 + 10;
+      return (
+        <g>
+          <rect x={x - 3} y={y - 9} width={w} height={16} rx={3} fill="rgba(10,15,12,0.85)" />
+          <text x={x} y={y + 3} fill={fill} fontSize={10} fontFamily="DM Sans, sans-serif">{text}</text>
+        </g>
+      );
+    };
+
+  const getReferenceLines = () => {
+    if (!plantSpecies) return null;
+    const prefix = getSpeciesPrefix();
 
     const min = plantSpecies[`min_${prefix}` as keyof PlantSpecies] as number;
     const max = plantSpecies[`max_${prefix}` as keyof PlantSpecies] as number;
@@ -142,21 +236,27 @@ export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
 
     return (
       <>
-        {min !== null && <ReferenceLine y={min} stroke="#ef4444" strokeDasharray="3 3"><Label value="Min" position="insideLeft" fill="#ef4444" fontSize={10}/></ReferenceLine>}
-        {max !== null && <ReferenceLine y={max} stroke="#ef4444" strokeDasharray="3 3"><Label value="Max" position="insideLeft" fill="#ef4444" fontSize={10}/></ReferenceLine>}
-        {optMin !== null && <ReferenceLine y={optMin} stroke="#3b82f6" strokeDasharray="3 3"><Label value="Opt Min" position="insideLeft" fill="#3b82f6" fontSize={10}/></ReferenceLine>}
-        {optMax !== null && <ReferenceLine y={optMax} stroke="#3b82f6" strokeDasharray="3 3"><Label value="Opt Max" position="insideLeft" fill="#3b82f6" fontSize={10}/></ReferenceLine>}
+        {optMin != null && optMax != null && (
+          <ReferenceArea y1={optMin} y2={optMax} fill={metricColor} fillOpacity={0.06} />
+        )}
+        {min != null && <ReferenceLine y={min} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.4}><Label content={refLabel('Min', '#ef4444')} /></ReferenceLine>}
+        {max != null && <ReferenceLine y={max} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.4}><Label content={refLabel('Max', '#ef4444')} /></ReferenceLine>}
+        {optMin != null && <ReferenceLine y={optMin} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5}><Label content={refLabel('Optimal', metricColor)} /></ReferenceLine>}
+        {optMax != null && <ReferenceLine y={optMax} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5} />}
       </>
     );
   };
 
   return (
     <div className="metric-chart">
+      <div className="chart-title">Historical Readings</div>
+
       <div className="metric-tabs">
         {METRICS.filter(m => availableMetrics.has(m.key)).map((m) => (
           <button
             key={m.key}
             className={metric === m.key ? 'tab active' : 'tab'}
+            style={metric === m.key ? { background: METRIC_COLORS[m.key] || '#22c55e' } : undefined}
             onClick={() => setMetric(m.key)}
           >
             {m.label}
@@ -164,35 +264,37 @@ export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
         ))}
       </div>
 
-      {latest && (
-        <div className="current-reading">
-          <span className="current-value">{convertValue(latest.value).toFixed(1)} {metricInfo.unit}</span>
-          <span className="current-time">
-            {new Date(latest.recorded_at).toLocaleString()}
-          </span>
+      <div className="chart-controls-row">
+        <div className="time-selector">
+          {(['24h', '7d', '30d', 'custom'] as Range[]).map((r) => (
+            <button
+              key={r}
+              className={range === r ? 'time-btn active' : 'time-btn'}
+              onClick={() => setRange(r)}
+            >
+              {r === 'custom' ? 'Custom' : r}
+            </button>
+          ))}
         </div>
-      )}
-
-      <div className="range-selector">
-        {(['24h', '7d', '30d', 'custom'] as Range[]).map((r) => (
-          <button
-            key={r}
-            className={range === r ? 'range active' : 'range'}
-            onClick={() => setRange(r)}
-          >
-            {r === 'custom' ? 'Custom' : r}
-          </button>
-        ))}
         {range === 'custom' && (
           <span className="custom-dates">
             <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
             <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
           </span>
         )}
+        {latest && (
+          <div className="metric-hero">
+            <span className="metric-value">Latest: {convertValue(latest.value).toFixed(1)}{metricInfo.unit}</span>
+            <span className="metric-timestamp staleness-indicator" title={new Date(latest.recorded_at).toLocaleString()}>
+              <span className={`staleness-dot ${timeAgo(latest.recorded_at).staleness}`} />
+              {timeAgo(latest.recorded_at).text}
+            </span>
+          </div>
+        )}
       </div>
 
-      {loading && <p className="status">Loading...</p>}
-      {error && <p className="status error">Error: {error}</p>}
+      {loading && <div className="chart-skeleton" />}
+      {!loading && error && <p className="status error">Error: {error}</p>}
 
       {!loading && !error && readings.length === 0 && (
         <p className="status">No data for this range.</p>
@@ -200,23 +302,55 @@ export function MetricChart({ sensorId, soilType, plantSpecies }: Props) {
 
       {readings.length > 0 && (
         <ResponsiveContainer width="100%" height={350}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="time" stroke="#888" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#888" tick={{ fontSize: 11 }} />
+          <AreaChart data={chartData} margin={{ right: 20 }}>
+            <defs>
+              <linearGradient id={`chartGradient-${metric}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={metricColor} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={metricColor} stopOpacity={0.0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.04)" vertical={false} />
+            <XAxis
+              dataKey="time"
+              type="number"
+              domain={['dataMin', 'dataMax']}
+              tick={{ fill: '#4b7a5a', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={formatXTick}
+              angle={-30}
+              textAnchor="end"
+              height={60}
+            />
+            <YAxis
+              tick={{ fill: '#4b7a5a', fontSize: 11 }}
+              axisLine={false}
+              tickLine={false}
+              width={35}
+              domain={yDomain}
+            />
             <Tooltip
-              contentStyle={{ background: '#1e1e1e', border: '1px solid #444' }}
+              contentStyle={{
+                background: 'rgba(14, 20, 16, 0.95)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '8px',
+                color: '#f0fdf4',
+                fontSize: '13px',
+              }}
+              labelFormatter={(ts) => new Date(ts as number).toLocaleString()}
             />
             {getReferenceLines()}
-            <Line
+            <Area
               type="monotone"
               dataKey="value"
-              stroke="#4ade80"
+              stroke={metricColor}
               strokeWidth={2}
+              fill={`url(#chartGradient-${metric})`}
               dot={false}
+              activeDot={{ r: 5, fill: metricColor, stroke: '#080c0a', strokeWidth: 2 }}
               name={`${metricInfo.label} (${metricInfo.unit})`}
             />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       )}
     </div>

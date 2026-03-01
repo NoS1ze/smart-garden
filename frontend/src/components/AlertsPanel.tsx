@@ -134,7 +134,11 @@ export function AlertsPanel({ sensorId }: Props) {
       {loading ? (
         <p className="status">Loading alerts...</p>
       ) : alerts.length === 0 ? (
-        <p className="status">No active alert rules.</p>
+        <div className="empty-state-card">
+          <div className="empty-icon">&#128276;</div>
+          <div className="empty-text">No alert rules yet</div>
+          <div className="empty-subtext">Add a rule to get notified when readings go out of range.</div>
+        </div>
       ) : (
         <table className="alerts-table">
           <thead>

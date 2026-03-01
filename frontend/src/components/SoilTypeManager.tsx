@@ -12,6 +12,8 @@ export function SoilTypeManager() {
   const [addName, setAddName] = useState('');
   const [addDry, setAddDry] = useState('800');
   const [addWet, setAddWet] = useState('400');
+  const [addDry12, setAddDry12] = useState('3200');
+  const [addWet12, setAddWet12] = useState('600');
   const [submitting, setSubmitting] = useState(false);
 
   // Edit state
@@ -19,6 +21,8 @@ export function SoilTypeManager() {
   const [editName, setEditName] = useState('');
   const [editDry, setEditDry] = useState('');
   const [editWet, setEditWet] = useState('');
+  const [editDry12, setEditDry12] = useState('');
+  const [editWet12, setEditWet12] = useState('');
 
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +54,8 @@ export function SoilTypeManager() {
           name: addName.trim(),
           raw_dry: parseInt(addDry) || 800,
           raw_wet: parseInt(addWet) || 400,
+          raw_dry_12bit: parseInt(addDry12) || 3200,
+          raw_wet_12bit: parseInt(addWet12) || 600,
         }),
       });
       if (!res.ok) {
@@ -60,6 +66,8 @@ export function SoilTypeManager() {
       setAddName('');
       setAddDry('800');
       setAddWet('400');
+      setAddDry12('3200');
+      setAddWet12('600');
       fetchSoilTypes();
     } catch (e: any) {
       setError(e.message);
@@ -78,6 +86,8 @@ export function SoilTypeManager() {
           name: editName.trim() || undefined,
           raw_dry: parseInt(editDry) || undefined,
           raw_wet: parseInt(editWet) || undefined,
+          raw_dry_12bit: parseInt(editDry12) || undefined,
+          raw_wet_12bit: parseInt(editWet12) || undefined,
         }),
       });
       if (!res.ok) {
@@ -111,6 +121,8 @@ export function SoilTypeManager() {
     setEditName(st.name);
     setEditDry(String(st.raw_dry));
     setEditWet(String(st.raw_wet));
+    setEditDry12(String(st.raw_dry_12bit));
+    setEditWet12(String(st.raw_wet_12bit));
   };
 
   if (loading) return <p className="status">Loading soil types...</p>;
@@ -135,14 +147,28 @@ export function SoilTypeManager() {
             onChange={(e) => setAddName(e.target.value)}
             autoFocus
           />
-          <label>
-            Raw Dry
-            <input type="number" value={addDry} onChange={(e) => setAddDry(e.target.value)} />
-          </label>
-          <label>
-            Raw Wet
-            <input type="number" value={addWet} onChange={(e) => setAddWet(e.target.value)} />
-          </label>
+          <div className="cal-group-label">10-bit (ESP8266)</div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <label style={{ flex: 1 }}>
+              Raw Dry
+              <input type="number" value={addDry} onChange={(e) => setAddDry(e.target.value)} />
+            </label>
+            <label style={{ flex: 1 }}>
+              Raw Wet
+              <input type="number" value={addWet} onChange={(e) => setAddWet(e.target.value)} />
+            </label>
+          </div>
+          <div className="cal-group-label">12-bit (ESP32)</div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <label style={{ flex: 1 }}>
+              Raw Dry
+              <input type="number" value={addDry12} onChange={(e) => setAddDry12(e.target.value)} />
+            </label>
+            <label style={{ flex: 1 }}>
+              Raw Wet
+              <input type="number" value={addWet12} onChange={(e) => setAddWet12(e.target.value)} />
+            </label>
+          </div>
           <button className="btn-primary" onClick={handleAdd} disabled={submitting || !addName.trim()}>
             {submitting ? 'Creating...' : 'Create'}
           </button>
@@ -155,49 +181,72 @@ export function SoilTypeManager() {
           <p className="status">Default calibration (dry=800, wet=400) will be used.</p>
         </div>
       ) : (
-        <table className="soil-types-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Raw Dry</th>
-              <th>Raw Wet</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {soilTypes.map((st) => (
-              <tr key={st.id}>
-                {editingId === st.id ? (
-                  <>
-                    <td>
-                      <input value={editName} onChange={(e) => setEditName(e.target.value)} />
-                    </td>
-                    <td>
-                      <input type="number" value={editDry} onChange={(e) => setEditDry(e.target.value)} style={{ width: 80 }} />
-                    </td>
-                    <td>
-                      <input type="number" value={editWet} onChange={(e) => setEditWet(e.target.value)} style={{ width: 80 }} />
-                    </td>
-                    <td>
-                      <button className="btn-small btn-primary" onClick={() => handleEdit(st.id)}>Save</button>
-                      <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td>{st.name}</td>
-                    <td>{st.raw_dry}</td>
-                    <td>{st.raw_wet}</td>
-                    <td>
+        <div className="soil-types-list">
+          {soilTypes.map((st) => (
+            <div key={st.id} className="soil-card">
+              {editingId === st.id ? (
+                <div>
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <input className="form-input" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                  </div>
+                  <div className="cal-group-label">10-bit (ESP8266)</div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Raw Dry</label>
+                      <input className="form-input" type="number" value={editDry} onChange={(e) => setEditDry(e.target.value)} />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Raw Wet</label>
+                      <input className="form-input" type="number" value={editWet} onChange={(e) => setEditWet(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="cal-group-label">12-bit (ESP32)</div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Raw Dry</label>
+                      <input className="form-input" type="number" value={editDry12} onChange={(e) => setEditDry12(e.target.value)} />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">Raw Wet</label>
+                      <input className="form-input" type="number" value={editWet12} onChange={(e) => setEditWet12(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="form-actions">
+                    <button className="btn-small btn-primary" onClick={() => handleEdit(st.id)}>Save</button>
+                    <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="soil-header">
+                    <h3>{st.name}</h3>
+                    <div className="soil-actions">
                       <button className="btn-small btn-secondary" onClick={() => startEdit(st)}>Edit</button>
-                      <button className="btn-small delete-btn" onClick={() => handleDelete(st.id)}>Delete</button>
-                    </td>
-                  </>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      <button className="btn-small btn-danger" onClick={() => handleDelete(st.id)}>Delete</button>
+                    </div>
+                  </div>
+                  <div className="calibration-bar">
+                    <span className="cal-bit-label">10-bit</span>
+                    <div className="cal-track">
+                      <div className="cal-wet" style={{ width: `${(st.raw_wet / 1023) * 100}%` }} />
+                      <div className="cal-dry" style={{ width: `${((st.raw_dry - st.raw_wet) / 1023) * 100}%` }} />
+                    </div>
+                    <span className="cal-values">{st.raw_wet} → {st.raw_dry}</span>
+                  </div>
+                  <div className="calibration-bar">
+                    <span className="cal-bit-label">12-bit</span>
+                    <div className="cal-track">
+                      <div className="cal-wet" style={{ width: `${(st.raw_wet_12bit / 4095) * 100}%` }} />
+                      <div className="cal-dry" style={{ width: `${((st.raw_dry_12bit - st.raw_wet_12bit) / 4095) * 100}%` }} />
+                    </div>
+                    <span className="cal-values">{st.raw_wet_12bit} → {st.raw_dry_12bit}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

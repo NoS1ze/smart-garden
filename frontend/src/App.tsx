@@ -4,34 +4,41 @@ import { PlantDetail } from './components/PlantDetail';
 import { SoilTypeManager } from './components/SoilTypeManager';
 import { PlantSpeciesManager } from './components/PlantSpeciesManager';
 import { SensorManager } from './components/SensorManager';
+import { RoomManager } from './components/RoomManager';
+import { ToastProvider } from './components/Toast';
+import { DashboardIcon, LeafIcon, SoilIcon, SensorIcon, RoomIcon } from './components/Icons';
 import './App.css';
 
-type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors';
+type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors' | 'rooms';
 
 export function App() {
   const [view, setView] = useState<View>('dashboard');
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
 
   return (
+    <ToastProvider>
     <div className="app-container">
       <nav className="sidebar">
-        <div className="sidebar-header" onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
-          <h1>🌱 Smart Garden</h1>
+        <div className="sidebar-logo" onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
+          <span className="logo-text">Smart Garden</span>
         </div>
-        <ul className="nav-links">
-          <li className={view === 'dashboard' || view === 'plant-detail' ? 'active' : ''} onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
-            <span className="icon">📊</span> Dashboard
-          </li>
-          <li className={view === 'plant-species' ? 'active' : ''} onClick={() => setView('plant-species')}>
-            <span className="icon">🌿</span> Species
-          </li>
-          <li className={view === 'soil-types' ? 'active' : ''} onClick={() => setView('soil-types')}>
-            <span className="icon">⏳</span> Soil Types
-          </li>
-          <li className={view === 'sensors' ? 'active' : ''} onClick={() => setView('sensors')}>
-            <span className="icon">📟</span> Sensors
-          </li>
-        </ul>
+        <nav>
+          <div className={view === 'dashboard' || view === 'plant-detail' ? 'nav-item active' : 'nav-item'} onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
+            <DashboardIcon className="nav-icon" /> Dashboard
+          </div>
+          <div className={view === 'plant-species' ? 'nav-item active' : 'nav-item'} onClick={() => setView('plant-species')}>
+            <LeafIcon className="nav-icon" /> Species
+          </div>
+          <div className={view === 'soil-types' ? 'nav-item active' : 'nav-item'} onClick={() => setView('soil-types')}>
+            <SoilIcon className="nav-icon" /> Soil Types
+          </div>
+          <div className={view === 'sensors' ? 'nav-item active' : 'nav-item'} onClick={() => setView('sensors')}>
+            <SensorIcon className="nav-icon" /> Sensors
+          </div>
+          <div className={view === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => setView('rooms')}>
+            <RoomIcon className="nav-icon" /> Rooms
+          </div>
+        </nav>
       </nav>
 
       <main className="content">
@@ -71,7 +78,12 @@ export function App() {
         {view === 'sensors' && (
           <SensorManager />
         )}
+
+        {view === 'rooms' && (
+          <RoomManager />
+        )}
       </main>
     </div>
+    </ToastProvider>
   );
 }

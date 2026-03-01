@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { SoilType, PlantSpecies } from '../types';
+import { SoilType, PlantSpecies, Room, Plant } from '../types';
+import { PhotoUpload } from './PhotoUpload';
+import { useToast } from './Toast';
 
 interface Props {
   onCreated: () => void;
@@ -13,11 +15,16 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
   const [photoUrl, setPhotoUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [soilTypeId, setSoilTypeId] = useState('');
+  const [roomId, setRoomId] = useState('');
+  const [referencePlantId, setReferencePlantId] = useState('');
   const [soilTypes, setSoilTypes] = useState<SoilType[]>([]);
   const [plantSpecies, setPlantSpecies] = useState<PlantSpecies[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [allPlants, setAllPlants] = useState<Plant[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const toast = useToast();
   const apiUrl = import.meta.env.VITE_API_URL || '';
 
   useEffect(() => {
@@ -30,6 +37,16 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
       .then((res) => res.json())
       .then((body) => setPlantSpecies(body.data ?? []))
       .catch(() => {});
+
+    fetch(`${apiUrl}/api/rooms`)
+      .then((res) => res.json())
+      .then((body) => setRooms(body.data ?? []))
+      .catch(() => {});
+
+    fetch(`${apiUrl}/api/plants`)
+      .then((res) => res.json())
+      .then((body) => setAllPlants(body.data ?? []))
+      .catch(() => {});
   }, [apiUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,12 +57,14 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
     setError(null);
 
     try {
-      const body: Record<string, string> = { name: name.trim() };
+      const body: Record<string, string | null> = { name: name.trim() };
       if (plantSpeciesId) body.plant_species_id = plantSpeciesId;
       if (plantedDate) body.planted_date = plantedDate;
       if (photoUrl.trim()) body.photo_url = photoUrl.trim();
       if (notes.trim()) body.notes = notes.trim();
       if (soilTypeId) body.soil_type_id = soilTypeId;
+      body.room_id = roomId || null;
+      body.reference_plant_id = referencePlantId || null;
 
       const res = await fetch(`${apiUrl}/api/plants`, {
         method: 'POST',
@@ -58,9 +77,11 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
         throw new Error(data.detail || 'Failed to create plant');
       }
 
+      toast.success('Plant added successfully');
       onCreated();
     } catch (e: any) {
       setError(e.message);
+      toast.error(e.message);
     } finally {
       setSubmitting(false);
     }
@@ -94,6 +115,17 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
             </select>
           </label>
           <label>
+            Room
+            <select value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+              <option value="">None</option>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Planted Date
             <input
               type="date"
@@ -102,13 +134,8 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
             />
           </label>
           <label>
-            Photo URL
-            <input
-              type="url"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-              placeholder="https://..."
-            />
+            Photo
+            <PhotoUpload currentUrl={photoUrl || null} onUrlChange={(url) => setPhotoUrl(url || '')} />
           </label>
           <label>
             Notes
@@ -125,6 +152,17 @@ export function AddPlantForm({ onCreated, onCancel }: Props) {
               {soilTypes.map((st) => (
                 <option key={st.id} value={st.id}>
                   {st.name} (dry={st.raw_dry}, wet={st.raw_wet})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Reference sensor from
+            <select value={referencePlantId} onChange={(e) => setReferencePlantId(e.target.value)}>
+              <option value="">None</option>
+              {allPlants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
                 </option>
               ))}
             </select>
