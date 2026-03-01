@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plant, Sensor, SoilType, PlantSpecies, Room, Reading } from '../types';
+import { Plant, Sensor, SoilType, PlantSpecies, Room, Reading, WateringSchedule } from '../types';
 import { MetricChart } from './MetricChart';
+import { TrendCard } from './TrendCard';
 import { AlertsPanel } from './AlertsPanel';
 import { AlertHistory } from './AlertHistory';
+import { WateringLog } from './WateringLog';
 import { PhotoUpload } from './PhotoUpload';
 import { rawToPercent, timeAgo, getMetricStatus, getMetricRanges, getCalibration } from '../lib/calibration';
 import { ZonedGradientBar } from './ZonedGradientBar';
@@ -54,6 +56,12 @@ export function PlantDetail({ plantId, onBack }: Props) {
 
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [trendPeriod, setTrendPeriod] = useState('7d');
+
+  // Watering schedule state
+  const [schedule, setSchedule] = useState<WateringSchedule | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [newIntervalDays, setNewIntervalDays] = useState(7);
 
   const toast = useToast();
   const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -229,6 +237,17 @@ export function PlantDetail({ plantId, onBack }: Props) {
     }
   }, [apiUrl]);
 
+  const fetchSchedule = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/plants/${plantId}/watering-schedule`);
+      if (!res.ok) return;
+      const body = await res.json();
+      setSchedule(body.data?.[0] ?? null);
+    } catch {
+      // ignore
+    }
+  }, [apiUrl, plantId]);
+
   const fetchAllPlants = useCallback(async () => {
     try {
       const res = await fetch(`${apiUrl}/api/plants`);
@@ -242,11 +261,11 @@ export function PlantDetail({ plantId, onBack }: Props) {
 
   useEffect(() => {
     async function load() {
-      await Promise.all([fetchPlant(), fetchSensors(), fetchLatestReadings(), fetchSoilTypes(), fetchPlantSpecies(), fetchRooms(), fetchAllPlants()]);
+      await Promise.all([fetchPlant(), fetchSensors(), fetchLatestReadings(), fetchSoilTypes(), fetchPlantSpecies(), fetchRooms(), fetchAllPlants(), fetchSchedule()]);
       setLoading(false);
     }
     load();
-  }, [fetchPlant, fetchSensors, fetchLatestReadings, fetchSoilTypes, fetchPlantSpecies, fetchRooms, fetchAllPlants]);
+  }, [fetchPlant, fetchSensors, fetchLatestReadings, fetchSoilTypes, fetchPlantSpecies, fetchRooms, fetchAllPlants, fetchSchedule]);
 
   const savePlant = async () => {
     setSaving(true);
@@ -570,9 +589,48 @@ export function PlantDetail({ plantId, onBack }: Props) {
           {sensors.map((s) => (
             <div key={s.id} className="chart-section">
               {!singleSensor && <h4>{s.display_name || s.location || 'Sensor'}</h4>}
-              <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantSpecies={plant?.plant_species} adcBits={s.adc_bits ?? 10} />
+              <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantSpecies={plant?.plant_species} adcBits={s.adc_bits ?? 10} plantId={plantId} />
             </div>
           ))}
+        </section>
+      )}
+
+      {/* Trends */}
+      {sensors.length > 0 && (
+        <section className="detail-section trends-section">
+          <h3>Trends</h3>
+          <div className="trends-period-tabs">
+            {(['7d', '30d', '90d'] as const).map((p) => (
+              <button
+                key={p}
+                className={`trends-period-tab${trendPeriod === p ? ' active' : ''}`}
+                onClick={() => setTrendPeriod(p)}
+              >
+                {p.replace('d', ' days')}
+              </button>
+            ))}
+          </div>
+          <div className="trends-grid">
+            {[
+              { key: 'soil_moisture', label: 'Moisture', unit: '%', color: '#60a5fa' },
+              { key: 'temperature', label: 'Temperature', unit: '\u00b0C', color: '#f97316' },
+              { key: 'humidity', label: 'Humidity', unit: '%', color: '#14b8a6' },
+              { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm', color: '#a78bfa' },
+              { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb', color: '#f472b6' },
+              { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa', color: '#fbbf24' },
+            ].map((m) => (
+              <TrendCard
+                key={`${sensors[0].id}-${m.key}-${trendPeriod}`}
+                sensorId={sensors[0].id}
+                metric={m.key}
+                label={m.label}
+                unit={m.unit}
+                period={trendPeriod}
+                apiUrl={apiUrl}
+                color={m.color}
+              />
+            ))}
+          </div>
         </section>
       )}
 
@@ -591,6 +649,108 @@ export function PlantDetail({ plantId, onBack }: Props) {
           ))}
         </section>
       )}
+
+      {/* Watering Schedule */}
+      <section className="detail-section">
+        <h3>Watering Schedule</h3>
+        {schedule ? (
+          <div className="watering-schedule-card">
+            <div className="watering-schedule-info">
+              <span className="watering-schedule-interval">Every {schedule.interval_days} day{schedule.interval_days !== 1 ? 's' : ''}</span>
+              {schedule.next_due_at && (() => {
+                const isOverdue = new Date(schedule.next_due_at) < new Date();
+                return (
+                  <span className={`watering-schedule-due ${isOverdue ? 'overdue' : ''}`}>
+                    {isOverdue ? 'Overdue' : 'Next'}: {new Date(schedule.next_due_at).toLocaleDateString()}
+                  </span>
+                );
+              })()}
+              {schedule.last_watered_at && (
+                <span className="watering-schedule-last">
+                  Last watered: {new Date(schedule.last_watered_at).toLocaleDateString()}
+                </span>
+              )}
+              {schedule.notes && <span className="watering-schedule-notes">{schedule.notes}</span>}
+            </div>
+            <div className="watering-schedule-actions">
+              <button
+                className="btn-primary btn-sm"
+                disabled={scheduleLoading}
+                onClick={async () => {
+                  setScheduleLoading(true);
+                  try {
+                    await fetch(`${apiUrl}/api/plants/${plantId}/watering-events`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ plant_id: plantId }),
+                    });
+                    await fetchSchedule();
+                    toast.success('Watered!');
+                  } catch {
+                    toast.error('Failed to record watering');
+                  } finally {
+                    setScheduleLoading(false);
+                  }
+                }}
+              >
+                Water Now
+              </button>
+              <button
+                className="btn-text-danger btn-sm"
+                onClick={async () => {
+                  await fetch(`${apiUrl}/api/watering-schedules/${schedule.id}`, { method: 'DELETE' });
+                  setSchedule(null);
+                  toast.success('Schedule removed');
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="watering-schedule-create">
+            <label className="watering-schedule-create-label">
+              Water every
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={newIntervalDays}
+                onChange={(e) => setNewIntervalDays(Math.max(1, parseInt(e.target.value) || 1))}
+                className="watering-schedule-input"
+              />
+              days
+            </label>
+            <button
+              className="btn-primary btn-sm"
+              disabled={scheduleLoading}
+              onClick={async () => {
+                setScheduleLoading(true);
+                try {
+                  await fetch(`${apiUrl}/api/plants/${plantId}/watering-schedule`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ interval_days: newIntervalDays }),
+                  });
+                  await fetchSchedule();
+                  toast.success('Watering schedule created');
+                } catch {
+                  toast.error('Failed to create schedule');
+                } finally {
+                  setScheduleLoading(false);
+                }
+              }}
+            >
+              Set Schedule
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Watering Log */}
+      <section className="detail-section">
+        <WateringLog plantId={plantId} apiUrl={apiUrl} />
+      </section>
 
       {/* Delete Plant — bottom of page */}
       <div className="danger-zone">

@@ -46,8 +46,8 @@ def _get_soil_calibration(sensor_id: str) -> tuple[int, int]:
     adc_bits = sensor_result.data.get("adc_bits", 10) if sensor_result.data else 10
 
     # Default calibration based on ADC resolution
-    raw_dry = 800 if adc_bits == 10 else 3200
-    raw_wet = 400 if adc_bits == 10 else 600
+    raw_dry = 800 if adc_bits == 10 else 3430
+    raw_wet = 400 if adc_bits == 10 else 1360
 
     # Try to get plant-specific soil type calibration
     plant_result = (
@@ -76,13 +76,38 @@ def _get_soil_calibration(sensor_id: str) -> tuple[int, int]:
             )
             if st.data:
                 if adc_bits == 12:
-                    raw_dry = st.data.get("raw_dry_12bit", 3200)
-                    raw_wet = st.data.get("raw_wet_12bit", 600)
+                    raw_dry = st.data.get("raw_dry_12bit", 3430)
+                    raw_wet = st.data.get("raw_wet_12bit", 1360)
                 else:
                     raw_dry = st.data.get("raw_dry", 800)
                     raw_wet = st.data.get("raw_wet", 400)
 
     return raw_dry, raw_wet
+
+
+def _dispatch_to_channels(subject: str, body: str) -> None:
+    """Send alert to all enabled notification channels."""
+    import asyncio
+    from notifiers import send_notification
+
+    channels_result = (
+        supabase.table("notification_channels")
+        .select("*")
+        .eq("enabled", True)
+        .execute()
+    )
+    for ch in (channels_result.data or []):
+        try:
+            asyncio.get_event_loop().run_until_complete(
+                send_notification(ch["channel_type"], ch["config"], subject, body)
+            )
+        except RuntimeError:
+            # If no event loop or already running, create a new one
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(
+                send_notification(ch["channel_type"], ch["config"], subject, body)
+            )
+            loop.close()
 
 
 def check_alerts(sensor_id: str, readings: list[dict]) -> int:
@@ -150,6 +175,9 @@ def check_alerts(sensor_id: str, readings: list[dict]) -> int:
                 f"which is {direction} your threshold of {rule['threshold']}."
             )
             _send_email(rule["email"], subject, body)
+
+            # Dispatch to all enabled notification channels
+            _dispatch_to_channels(subject, body)
 
             # Record in alert_history
             supabase.table("alert_history").insert({

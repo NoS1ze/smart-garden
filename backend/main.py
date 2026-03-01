@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from alerts import check_alerts
+from auth import optional_user
 from database import supabase
 from models import (
     AlertCreate,
@@ -44,10 +49,22 @@ from models import (
     WateringEventCreate,
     WateringEventOut,
     WateringEventsListResponse,
+    WateringScheduleCreate,
+    WateringScheduleUpdate,
+    WateringScheduleOut,
+    WateringSchedulesListResponse,
+    TrendPoint,
+    TrendResponse,
+    NotificationChannelCreate,
+    NotificationChannelUpdate,
     StatusResponse,
 )
 
 app = FastAPI(title="Smart Garden IoT API", version="2.0.0")
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,6 +73,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _update_watering_schedules(plant_id: str) -> None:
+    """After a watering event, update enabled schedules for this plant."""
+    schedules = (
+        supabase.table("watering_schedules")
+        .select("*")
+        .eq("plant_id", plant_id)
+        .eq("enabled", True)
+        .execute()
+    )
+    now = datetime.utcnow()
+    for sched in (schedules.data or []):
+        supabase.table("watering_schedules").update({
+            "last_watered_at": now.isoformat(),
+            "next_due_at": (now + timedelta(days=sched["interval_days"])).isoformat(),
+        }).eq("id", sched["id"]).execute()
 
 
 # ── Health ───────────────────────────────────────────────
@@ -69,8 +103,9 @@ async def health():
 # ── Readings ──────────────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.post("/api/readings", response_model=ReadingsCreateResponse, status_code=201)
-async def create_readings(body: ReadingsCreate):
+async def create_readings(request: Request, body: ReadingsCreate):
     recorded_at = datetime.fromtimestamp(body.recorded_at, tz=timezone.utc).isoformat()
 
     # Look up sensor by MAC address
@@ -119,6 +154,15 @@ async def create_readings(body: ReadingsCreate):
     if sensor_updates:
         supabase.table("sensors").update(sensor_updates).eq("id", sensor_id).execute()
 
+    # Look up plant(s) associated with this sensor for plant_id stamping
+    plant_assocs = (
+        supabase.table("sensor_plant")
+        .select("plant_id")
+        .eq("sensor_id", sensor_id)
+        .execute()
+    )
+    plant_id = plant_assocs.data[0]["plant_id"] if plant_assocs.data else None
+
     # Check previous soil_moisture for watering detection BEFORE inserting
     soil_reading = next((r for r in body.readings if r.metric.value == "soil_moisture"), None)
     prev_soil_raw = None
@@ -141,6 +185,7 @@ async def create_readings(body: ReadingsCreate):
             "metric": r.metric.value,
             "value": r.value,
             "recorded_at": recorded_at,
+            **({"plant_id": plant_id} if plant_id else {}),
         }
         for r in body.readings
     ]
@@ -154,12 +199,6 @@ async def create_readings(body: ReadingsCreate):
         adc_range = 400 if (body.adc_bits or 10) == 10 else 2600
         raw_drop = prev_soil_raw - soil_reading.value
         if raw_drop > adc_range * 0.2:  # >20% of ADC range
-            plant_assocs = (
-                supabase.table("sensor_plant")
-                .select("plant_id")
-                .eq("sensor_id", sensor_id)
-                .execute()
-            )
             for assoc in (plant_assocs.data or []):
                 supabase.table("watering_events").insert({
                     "plant_id": assoc["plant_id"],
@@ -169,6 +208,7 @@ async def create_readings(body: ReadingsCreate):
                     "moisture_after": soil_reading.value,
                     "source": "auto",
                 }).execute()
+                _update_watering_schedules(assoc["plant_id"])
 
     alerts_triggered = check_alerts(
         sensor_id,
@@ -181,8 +221,10 @@ async def create_readings(body: ReadingsCreate):
     )
 
 
+@limiter.limit("30/minute")
 @app.get("/api/readings", response_model=ReadingsListResponse)
 async def list_readings(
+    request: Request,
     sensor_id: UUID = Query(...),
     metric: Optional[str] = Query(None),
     from_date: Optional[str] = Query(None, alias="from"),
@@ -215,6 +257,90 @@ async def list_readings(
     )
 
 
+@limiter.limit("30/minute")
+@app.get("/api/readings/trends", response_model=TrendResponse)
+async def get_reading_trends(
+    request: Request,
+    sensor_id: UUID = Query(...),
+    metric: str = Query(...),
+    period: str = Query("7d"),  # 7d, 30d, 90d
+):
+    """Get daily aggregated trends for a sensor+metric over a period."""
+    days = {"7d": 7, "30d": 30, "90d": 90}.get(period, 7)
+
+    now = datetime.utcnow()
+    from_date = (now - timedelta(days=days)).isoformat()
+    prev_from_date = (now - timedelta(days=days * 2)).isoformat()
+
+    # Fetch all readings for current period
+    res = supabase.table("readings").select("value,recorded_at").eq(
+        "sensor_id", str(sensor_id)
+    ).eq("metric", metric).gte("recorded_at", from_date).order("recorded_at").execute()
+
+    readings = res.data or []
+
+    if not readings:
+        return TrendResponse(
+            metric=metric, period=period, current_avg=0,
+            trend="stable", points=[]
+        )
+
+    # Group by day
+    daily: dict[str, list[float]] = defaultdict(list)
+    for r in readings:
+        day = r["recorded_at"][:10]  # "2026-03-01"
+        daily[day].append(r["value"])
+
+    points = []
+    all_values = []
+    for day in sorted(daily.keys()):
+        vals = daily[day]
+        all_values.extend(vals)
+        points.append(TrendPoint(
+            day=day,
+            avg=round(sum(vals) / len(vals), 2),
+            min=round(min(vals), 2),
+            max=round(max(vals), 2),
+        ))
+
+    current_avg = round(sum(all_values) / len(all_values), 2) if all_values else 0
+
+    # Previous period for comparison
+    prev_res = supabase.table("readings").select("value").eq(
+        "sensor_id", str(sensor_id)
+    ).eq("metric", metric).gte("recorded_at", prev_from_date).lt("recorded_at", from_date).execute()
+
+    prev_values = [r["value"] for r in (prev_res.data or [])]
+    previous_avg = round(sum(prev_values) / len(prev_values), 2) if prev_values else None
+
+    # Determine trend
+    if previous_avg is None:
+        trend = "stable"
+        change_pct = None
+    else:
+        diff = current_avg - previous_avg
+        if previous_avg != 0:
+            change_pct = round((diff / abs(previous_avg)) * 100, 1)
+        else:
+            change_pct = 0.0
+        if abs(change_pct) < 3:
+            trend = "stable"
+        elif diff > 0:
+            trend = "up"
+        else:
+            trend = "down"
+
+    return TrendResponse(
+        metric=metric,
+        period=period,
+        current_avg=current_avg,
+        previous_avg=previous_avg,
+        trend=trend,
+        change_pct=change_pct,
+        points=points,
+    )
+
+
 # ── Sensors ───────────────────────────────────────────────
 
 
@@ -238,8 +364,9 @@ def _enrich_sensor(row: dict, board_types_map: dict | None = None) -> SensorOut:
     return SensorOut(**row, board_type=board_type)
 
 
+@limiter.limit("60/minute")
 @app.get("/api/sensors", response_model=SensorsListResponse)
-async def list_sensors():
+async def list_sensors(request: Request):
     result = supabase.table("sensors").select("*").order("created_at", desc=True).execute()
     data = result.data or []
 
@@ -253,8 +380,9 @@ async def list_sensors():
     )
 
 
+@limiter.limit("20/minute")
 @app.put("/api/sensors/{sensor_id}", response_model=SensorOut)
-async def update_sensor(sensor_id: UUID, body: SensorUpdate):
+async def update_sensor(request: Request, sensor_id: UUID, body: SensorUpdate):
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -272,8 +400,9 @@ async def update_sensor(sensor_id: UUID, body: SensorUpdate):
     return _enrich_sensor(result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/sensors/{sensor_id}", response_model=StatusResponse)
-async def delete_sensor(sensor_id: UUID):
+async def delete_sensor(request: Request, sensor_id: UUID):
     result = (
         supabase.table("sensors")
         .delete()
@@ -288,8 +417,9 @@ async def delete_sensor(sensor_id: UUID):
 # ── Soil Types ────────────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.get("/api/soil-types", response_model=SoilTypesListResponse)
-async def list_soil_types():
+async def list_soil_types(request: Request):
     result = supabase.table("soil_types").select("*").order("name").execute()
     data = result.data or []
     return SoilTypesListResponse(
@@ -298,8 +428,9 @@ async def list_soil_types():
     )
 
 
+@limiter.limit("20/minute")
 @app.post("/api/soil-types", response_model=SoilTypeOut, status_code=201)
-async def create_soil_type(body: SoilTypeCreate):
+async def create_soil_type(request: Request, body: SoilTypeCreate):
     row = body.model_dump()
     result = supabase.table("soil_types").insert(row).execute()
     if not result.data:
@@ -307,8 +438,9 @@ async def create_soil_type(body: SoilTypeCreate):
     return SoilTypeOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.put("/api/soil-types/{soil_type_id}", response_model=SoilTypeOut)
-async def update_soil_type(soil_type_id: UUID, body: SoilTypeUpdate):
+async def update_soil_type(request: Request, soil_type_id: UUID, body: SoilTypeUpdate):
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -323,8 +455,9 @@ async def update_soil_type(soil_type_id: UUID, body: SoilTypeUpdate):
     return SoilTypeOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/soil-types/{soil_type_id}", response_model=StatusResponse)
-async def delete_soil_type(soil_type_id: UUID):
+async def delete_soil_type(request: Request, soil_type_id: UUID):
     result = (
         supabase.table("soil_types")
         .delete()
@@ -339,8 +472,9 @@ async def delete_soil_type(soil_type_id: UUID):
 # ── Board Types ──────────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.get("/api/board-types", response_model=BoardTypesListResponse)
-async def list_board_types():
+async def list_board_types(request: Request):
     result = supabase.table("board_types").select("*").order("name").execute()
     data = result.data or []
     return BoardTypesListResponse(
@@ -349,8 +483,9 @@ async def list_board_types():
     )
 
 
+@limiter.limit("20/minute")
 @app.post("/api/board-types", response_model=BoardTypeOut, status_code=201)
-async def create_board_type(body: BoardTypeCreate):
+async def create_board_type(request: Request, body: BoardTypeCreate):
     row = body.model_dump()
     result = supabase.table("board_types").insert(row).execute()
     if not result.data:
@@ -358,8 +493,9 @@ async def create_board_type(body: BoardTypeCreate):
     return BoardTypeOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.put("/api/board-types/{board_type_id}", response_model=BoardTypeOut)
-async def update_board_type(board_type_id: UUID, body: BoardTypeUpdate):
+async def update_board_type(request: Request, board_type_id: UUID, body: BoardTypeUpdate):
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -374,8 +510,9 @@ async def update_board_type(board_type_id: UUID, body: BoardTypeUpdate):
     return BoardTypeOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/board-types/{board_type_id}", response_model=StatusResponse)
-async def delete_board_type(board_type_id: UUID):
+async def delete_board_type(request: Request, board_type_id: UUID):
     result = (
         supabase.table("board_types")
         .delete()
@@ -390,8 +527,9 @@ async def delete_board_type(board_type_id: UUID):
 # ── Plant Species ───────────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.get("/api/plant-species", response_model=PlantSpeciesListResponse)
-async def list_plant_species():
+async def list_plant_species(request: Request):
     result = supabase.table("plant_species").select("*").order("name").execute()
     data = result.data or []
     return PlantSpeciesListResponse(
@@ -400,8 +538,9 @@ async def list_plant_species():
     )
 
 
+@limiter.limit("20/minute")
 @app.post("/api/plant-species", response_model=PlantSpeciesOut, status_code=201)
-async def create_plant_species(body: PlantSpeciesCreate):
+async def create_plant_species(request: Request, body: PlantSpeciesCreate):
     row = body.model_dump()
     result = supabase.table("plant_species").insert(row).execute()
     if not result.data:
@@ -409,8 +548,9 @@ async def create_plant_species(body: PlantSpeciesCreate):
     return PlantSpeciesOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.put("/api/plant-species/{plant_species_id}", response_model=PlantSpeciesOut)
-async def update_plant_species(plant_species_id: UUID, body: PlantSpeciesUpdate):
+async def update_plant_species(request: Request, plant_species_id: UUID, body: PlantSpeciesUpdate):
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -425,8 +565,9 @@ async def update_plant_species(plant_species_id: UUID, body: PlantSpeciesUpdate)
     return PlantSpeciesOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/plant-species/{plant_species_id}", response_model=StatusResponse)
-async def delete_plant_species(plant_species_id: UUID):
+async def delete_plant_species(request: Request, plant_species_id: UUID):
     result = (
         supabase.table("plant_species")
         .delete()
@@ -441,8 +582,9 @@ async def delete_plant_species(plant_species_id: UUID):
 # ── Rooms ─────────────────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.get("/api/rooms", response_model=RoomsListResponse)
-async def list_rooms():
+async def list_rooms(request: Request):
     result = supabase.table("rooms").select("*").order("name").execute()
     data = result.data or []
     return RoomsListResponse(
@@ -451,8 +593,9 @@ async def list_rooms():
     )
 
 
+@limiter.limit("20/minute")
 @app.post("/api/rooms", response_model=RoomOut, status_code=201)
-async def create_room(body: RoomCreate):
+async def create_room(request: Request, body: RoomCreate):
     row = body.model_dump()
     result = supabase.table("rooms").insert(row).execute()
     if not result.data:
@@ -460,8 +603,9 @@ async def create_room(body: RoomCreate):
     return RoomOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.put("/api/rooms/{room_id}", response_model=RoomOut)
-async def update_room(room_id: UUID, body: RoomUpdate):
+async def update_room(request: Request, room_id: UUID, body: RoomUpdate):
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -476,8 +620,9 @@ async def update_room(room_id: UUID, body: RoomUpdate):
     return RoomOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/rooms/{room_id}", response_model=StatusResponse)
-async def delete_room(room_id: UUID):
+async def delete_room(request: Request, room_id: UUID):
     result = (
         supabase.table("rooms")
         .delete()
@@ -489,8 +634,9 @@ async def delete_room(room_id: UUID):
     return StatusResponse()
 
 
+@limiter.limit("60/minute")
 @app.get("/api/rooms/{room_id}/plants", response_model=PlantsListResponse)
-async def list_room_plants(room_id: UUID):
+async def list_room_plants(request: Request, room_id: UUID):
     # Verify room exists
     room = supabase.table("rooms").select("id").eq("id", str(room_id)).limit(1).execute()
     if not room.data:
@@ -577,8 +723,9 @@ def _get_plant_sensors(plant_id: str) -> list[SensorOut]:
     return [SensorOut(**s) for s in (sensors_result.data or [])]
 
 
+@limiter.limit("60/minute")
 @app.get("/api/plants", response_model=PlantsListResponse)
-async def list_plants():
+async def list_plants(request: Request):
     plants_result = supabase.table("plants").select("*").order("created_at", desc=True).execute()
     plants = plants_result.data or []
 
@@ -590,8 +737,9 @@ async def list_plants():
     return PlantsListResponse(data=out, count=len(out))
 
 
+@limiter.limit("60/minute")
 @app.get("/api/plants/{plant_id}", response_model=PlantOut)
-async def get_plant(plant_id: UUID):
+async def get_plant(request: Request, plant_id: UUID):
     result = (
         supabase.table("plants")
         .select("*")
@@ -605,8 +753,9 @@ async def get_plant(plant_id: UUID):
     return _enrich_plant(result.data, sensors)
 
 
+@limiter.limit("20/minute")
 @app.post("/api/plants", response_model=PlantOut, status_code=201)
-async def create_plant(body: PlantCreate):
+async def create_plant(request: Request, body: PlantCreate, user: Optional[dict] = Depends(optional_user)):
     row = body.model_dump(exclude_none=True)
     if "planted_date" in row:
         row["planted_date"] = row["planted_date"].isoformat()
@@ -618,14 +767,17 @@ async def create_plant(body: PlantCreate):
         row["room_id"] = str(row["room_id"])
     if "reference_plant_id" in row:
         row["reference_plant_id"] = str(row["reference_plant_id"])
+    if user:
+        row["user_id"] = user["id"]
     result = supabase.table("plants").insert(row).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create plant")
     return _enrich_plant(result.data[0], sensors=[])
 
 
+@limiter.limit("20/minute")
 @app.put("/api/plants/{plant_id}", response_model=PlantOut)
-async def update_plant(plant_id: UUID, body: PlantUpdate):
+async def update_plant(request: Request, plant_id: UUID, body: PlantUpdate):
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -653,8 +805,9 @@ async def update_plant(plant_id: UUID, body: PlantUpdate):
     return _enrich_plant(result.data[0], sensors)
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/plants/{plant_id}", response_model=StatusResponse)
-async def delete_plant(plant_id: UUID):
+async def delete_plant(request: Request, plant_id: UUID):
     result = (
         supabase.table("plants")
         .delete()
@@ -666,8 +819,9 @@ async def delete_plant(plant_id: UUID):
     return StatusResponse()
 
 
+@limiter.limit("20/minute")
 @app.post("/api/plants/{plant_id}/sensors", response_model=StatusResponse, status_code=201)
-async def associate_sensor(plant_id: UUID, body: SensorAssociate):
+async def associate_sensor(request: Request, plant_id: UUID, body: SensorAssociate):
     # Verify plant exists
     plant = supabase.table("plants").select("id").eq("id", str(plant_id)).limit(1).execute()
     if not plant.data:
@@ -688,8 +842,9 @@ async def associate_sensor(plant_id: UUID, body: SensorAssociate):
     return StatusResponse()
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/plants/{plant_id}/sensors/{sensor_id}", response_model=StatusResponse)
-async def unassociate_sensor(plant_id: UUID, sensor_id: UUID):
+async def unassociate_sensor(request: Request, plant_id: UUID, sensor_id: UUID):
     result = (
         supabase.table("sensor_plant")
         .delete()
@@ -705,8 +860,9 @@ async def unassociate_sensor(plant_id: UUID, sensor_id: UUID):
 # ── Alerts ────────────────────────────────────────────────
 
 
+@limiter.limit("20/minute")
 @app.post("/api/alerts", response_model=AlertOut, status_code=201)
-async def create_alert(body: AlertCreate):
+async def create_alert(request: Request, body: AlertCreate, user: Optional[dict] = Depends(optional_user)):
     row = {
         "sensor_id": str(body.sensor_id),
         "metric": body.metric.value,
@@ -714,6 +870,7 @@ async def create_alert(body: AlertCreate):
         "threshold": body.threshold,
         "email": body.email,
         "active": True,
+        **({"user_id": user["id"]} if user else {}),
     }
     result = supabase.table("alerts").insert(row).execute()
     if not result.data:
@@ -721,8 +878,10 @@ async def create_alert(body: AlertCreate):
     return AlertOut(**result.data[0])
 
 
+@limiter.limit("60/minute")
 @app.get("/api/alerts", response_model=AlertsListResponse)
 async def list_alerts(
+    request: Request,
     sensor_id: Optional[UUID] = Query(None),
     active: Optional[bool] = Query(None),
 ):
@@ -742,8 +901,9 @@ async def list_alerts(
 # ── Watering Events ──────────────────────────────────────
 
 
+@limiter.limit("60/minute")
 @app.get("/api/plants/{plant_id}/watering-events", response_model=WateringEventsListResponse)
-async def list_watering_events(plant_id: UUID, limit: int = Query(50, ge=1, le=500)):
+async def list_watering_events(request: Request, plant_id: UUID, limit: int = Query(50, ge=1, le=500)):
     result = (
         supabase.table("watering_events")
         .select("*")
@@ -759,8 +919,9 @@ async def list_watering_events(plant_id: UUID, limit: int = Query(50, ge=1, le=5
     )
 
 
+@limiter.limit("20/minute")
 @app.post("/api/plants/{plant_id}/watering-events", response_model=WateringEventOut, status_code=201)
-async def create_watering_event(plant_id: UUID, body: WateringEventCreate):
+async def create_watering_event(request: Request, plant_id: UUID, body: WateringEventCreate):
     row = {
         "plant_id": str(plant_id),
         "detected_at": (body.detected_at or datetime.now(timezone.utc)).isoformat(),
@@ -769,11 +930,16 @@ async def create_watering_event(plant_id: UUID, body: WateringEventCreate):
     result = supabase.table("watering_events").insert(row).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create watering event")
+
+    # Update watering schedules for this plant
+    _update_watering_schedules(str(plant_id))
+
     return WateringEventOut(**result.data[0])
 
 
+@limiter.limit("20/minute")
 @app.delete("/api/watering-events/{event_id}", response_model=StatusResponse)
-async def delete_watering_event(event_id: UUID):
+async def delete_watering_event(request: Request, event_id: UUID):
     result = (
         supabase.table("watering_events")
         .delete()
@@ -785,8 +951,111 @@ async def delete_watering_event(event_id: UUID):
     return StatusResponse()
 
 
+# ── Watering Schedules ─────────────────────────────────
+
+
+@limiter.limit("60/minute")
+@app.get("/api/plants/{plant_id}/watering-schedule")
+async def get_watering_schedule(request: Request, plant_id: UUID):
+    res = supabase.table("watering_schedules").select("*").eq("plant_id", str(plant_id)).execute()
+    return {"data": res.data, "count": len(res.data)}
+
+
+@limiter.limit("20/minute")
+@app.post("/api/plants/{plant_id}/watering-schedule", status_code=201)
+async def create_watering_schedule(request: Request, plant_id: UUID, body: WateringScheduleCreate):
+    now = datetime.utcnow()
+    row = {
+        "plant_id": str(plant_id),
+        "interval_days": body.interval_days,
+        "notes": body.notes,
+        "next_due_at": (now + timedelta(days=body.interval_days)).isoformat(),
+    }
+    res = supabase.table("watering_schedules").insert(row).execute()
+    return res.data[0]
+
+
+@limiter.limit("20/minute")
+@app.put("/api/watering-schedules/{schedule_id}")
+async def update_watering_schedule(request: Request, schedule_id: UUID, body: WateringScheduleUpdate):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    res = supabase.table("watering_schedules").update(updates).eq("id", str(schedule_id)).execute()
+    if not res.data:
+        raise HTTPException(404, "Schedule not found")
+    return res.data[0]
+
+
+@limiter.limit("20/minute")
+@app.delete("/api/watering-schedules/{schedule_id}")
+async def delete_watering_schedule(request: Request, schedule_id: UUID):
+    supabase.table("watering_schedules").delete().eq("id", str(schedule_id)).execute()
+    return {"status": "ok"}
+
+
+# ── Notification Channels ─────────────────────────────
+
+
+@app.get("/api/notification-channels")
+@limiter.limit("60/minute")
+async def list_notification_channels(request: Request):
+    res = supabase.table("notification_channels").select("*").order("created_at").execute()
+    return {"data": res.data, "count": len(res.data)}
+
+
+@app.post("/api/notification-channels", status_code=201)
+@limiter.limit("20/minute")
+async def create_notification_channel(body: NotificationChannelCreate, request: Request):
+    row = {
+        "channel_type": body.channel_type,
+        "config": body.config,
+        "enabled": body.enabled,
+    }
+    res = supabase.table("notification_channels").insert(row).execute()
+    return res.data[0]
+
+
+@app.put("/api/notification-channels/{channel_id}")
+@limiter.limit("20/minute")
+async def update_notification_channel(channel_id: UUID, body: NotificationChannelUpdate, request: Request):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    res = supabase.table("notification_channels").update(updates).eq("id", str(channel_id)).execute()
+    if not res.data:
+        raise HTTPException(404, "Channel not found")
+    return res.data[0]
+
+
+@app.delete("/api/notification-channels/{channel_id}")
+@limiter.limit("20/minute")
+async def delete_notification_channel(channel_id: UUID, request: Request):
+    supabase.table("notification_channels").delete().eq("id", str(channel_id)).execute()
+    return {"status": "ok"}
+
+
+@app.post("/api/notification-channels/{channel_id}/test")
+@limiter.limit("10/minute")
+async def test_notification_channel(channel_id: UUID, request: Request):
+    res = supabase.table("notification_channels").select("*").eq("id", str(channel_id)).execute()
+    if not res.data:
+        raise HTTPException(404, "Channel not found")
+    ch = res.data[0]
+    from notifiers import send_notification
+    success = await send_notification(
+        ch["channel_type"], ch["config"],
+        "Smart Garden Test",
+        "This is a test notification from your Smart Garden system.",
+    )
+    if not success:
+        raise HTTPException(500, "Notification delivery failed")
+    return {"status": "ok"}
+
+
+@limiter.limit("20/minute")
 @app.delete("/api/alerts/{alert_id}", response_model=StatusResponse)
-async def delete_alert(alert_id: UUID):
+async def delete_alert(request: Request, alert_id: UUID):
     result = (
         supabase.table("alerts")
         .update({"active": False})

@@ -109,6 +109,7 @@ export interface SensorPlant {
 export interface Reading {
   id: string;
   sensor_id: string;
+  plant_id: string | null;
   metric: string;
   value: number;
   recorded_at: string;
@@ -139,6 +140,17 @@ export interface WateringEvent {
   moisture_before: number | null;
   moisture_after: number | null;
   source: string;
+  created_at: string;
+}
+
+export interface WateringSchedule {
+  id: string;
+  plant_id: string;
+  interval_days: number;
+  last_watered_at: string | null;
+  next_due_at: string | null;
+  enabled: boolean;
+  notes: string | null;
   created_at: string;
 }
 

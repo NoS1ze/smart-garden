@@ -34,6 +34,45 @@
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
   --radius-card: 12px;
   --radius-sm: 8px;
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-green: rgba(34, 197, 94, 0.2);
+
+  /* Input */
+  --bg-input: #0f1611;
+  --bg-input-focus: #131c15;
+
+  /* Card shadow */
+  --shadow-card-hover: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="light"] {
+  --bg-base: #f5f7f6;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f5f1;
+  --bg-glass: rgba(0, 0, 0, 0.03);
+  --bg-glass-border: rgba(0, 0, 0, 0.08);
+  --bg-input: #f0f5f1;
+  --bg-input-focus: #e8f0ea;
+  --green-vivid: #16a34a;
+  --green-soft: #22c55e;
+  --green-dim: #86efac;
+  --green-glow: rgba(22, 163, 74, 0.08);
+  --teal: #0d9488;
+  --amber: #d97706;
+  --red-alert: #dc2626;
+  --blue-data: #3b82f6;
+  --text-primary: #1a2e1f;
+  --text-secondary: #3d6b4a;
+  --text-muted: #7a9b85;
+  --text-dim: #b0c8b8;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-green: rgba(22, 163, 74, 0.2);
+  --shadow-glow: 0 0 40px rgba(22, 163, 74, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 /* ---- Reset ---- */
@@ -86,7 +125,7 @@ h1, h2, h3 {
 /* ---- Sidebar ---- */
 .sidebar {
   width: 220px;
-  background: linear-gradient(180deg, #0c150e 0%, #0a0f0c 100%);
+  background: var(--bg-surface);
   border-right: 1px solid var(--bg-glass-border);
   padding: 24px 0;
   position: fixed;
@@ -107,6 +146,24 @@ h1, h2, h3 {
   margin-bottom: 16px;
   cursor: pointer;
   background: radial-gradient(ellipse at 30% 80%, rgba(34, 197, 94, 0.06), transparent 70%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-toggle {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 4px 8px;
+  transition: background 0.2s;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  background: var(--green-glow);
 }
 
 .logo-text {
@@ -2235,6 +2292,214 @@ h1, h2, h3 {
   border: 1px solid var(--bg-glass-border);
 }
 
+/* ---- Light theme grid overlay ---- */
+:root[data-theme="light"] body::before {
+  background-image:
+    linear-gradient(rgba(22, 163, 74, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 163, 74, 0.04) 1px, transparent 1px);
+}
+
+/* ---- Watering Log ---- */
+.watering-log {
+  margin-top: 1.5rem;
+}
+.watering-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.watering-log-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+.watering-timeline {
+  position: relative;
+  padding-left: 1.5rem;
+  border-left: 2px solid var(--border-subtle);
+}
+.watering-event {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
+.watering-event + .watering-event {
+  border-top: 1px solid var(--border-subtle);
+}
+.watering-event-dot {
+  position: absolute;
+  left: -1.75rem;
+  top: 1rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--blue-data);
+  border: 2px solid var(--bg-surface);
+}
+.watering-event-content {
+  flex: 1;
+}
+.watering-event-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.watering-event-date {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.watering-source-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.watering-source-badge.auto {
+  background: var(--green-glow);
+  color: var(--green-vivid);
+}
+.watering-source-badge.manual {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--blue-data);
+}
+.watering-moisture {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+.watering-event-delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+.watering-event:hover .watering-event-delete {
+  opacity: 1;
+}
+.watering-event-delete:hover {
+  color: var(--red-alert);
+}
+
+/* ---- Watering Schedule ---- */
+.watering-schedule-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: var(--radius-card);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.watering-schedule-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.watering-schedule-interval {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.watering-schedule-due {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.watering-schedule-due.overdue {
+  color: var(--red-alert);
+  font-weight: 600;
+}
+
+.watering-schedule-last {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.watering-schedule-notes {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.watering-schedule-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.watering-schedule-create {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.watering-schedule-create-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.watering-schedule-input {
+  width: 60px;
+  text-align: center;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 0.9rem;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.watering-schedule-input:focus {
+  outline: none;
+  border-color: var(--blue-data);
+}
+
+.btn-sm {
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+}
+
+/* ---- Watering Overdue Indicator (PlantCard) ---- */
+.watering-overdue-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--blue-data);
+  flex-shrink: 0;
+}
+
+.watering-overdue-dot::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red-alert);
+  box-shadow: 0 0 4px var(--red-alert);
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 1100px) {
   .plant-grid {
@@ -2377,4 +2642,186 @@ h1, h2, h3 {
   .plant-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- Trends ---- */
+.trends-section {
+  margin-top: 1.5rem;
+}
+.trends-section h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+.trends-period-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.trends-period-tab {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+.trends-period-tab.active {
+  background: var(--green-glow);
+  border-color: var(--green-vivid);
+  color: var(--green-vivid);
+}
+.trends-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.trend-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+.trend-card-loading {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+.trend-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+.trend-card-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.trend-card-avg {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.trend-card-sparkline {
+  margin: 0 -0.25rem;
+}
+.trend-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+}
+.trend-arrow {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.trend-change {
+  font-weight: 600;
+}
+.trend-period {
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* ---- Notification Channels ---- */
+.channel-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: var(--green-glow);
+  color: var(--green-vivid);
+  margin-right: 0.5rem;
+}
+.channel-config-preview {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.channel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--text-dim);
+  border-radius: 20px;
+  transition: 0.3s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--green-vivid);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* ---- Auth ---- */
+.sidebar-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: auto;
+}
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+}
+.user-email {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: var(--text-muted);
+  font-size: 1.1rem;
 }

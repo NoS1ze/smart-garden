@@ -5,22 +5,33 @@ import { SoilTypeManager } from './components/SoilTypeManager';
 import { PlantSpeciesManager } from './components/PlantSpeciesManager';
 import { SensorManager } from './components/SensorManager';
 import { RoomManager } from './components/RoomManager';
+import { NotificationManager } from './components/NotificationManager';
 import { ToastProvider } from './components/Toast';
-import { DashboardIcon, LeafIcon, SoilIcon, SensorIcon, RoomIcon } from './components/Icons';
+import { DashboardIcon, LeafIcon, SoilIcon, SensorIcon, RoomIcon, BellIcon } from './components/Icons';
+import { ThemeProvider, useTheme } from './lib/theme';
+import { AuthProvider, useAuth } from './lib/auth';
 import './App.css';
 
-type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors' | 'rooms';
+type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors' | 'rooms' | 'notifications';
 
-export function App() {
+function AppContent() {
   const [view, setView] = useState<View>('dashboard');
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const { theme, toggle } = useTheme();
+  const { user, loading, signInWithGoogle, signOut } = useAuth();
+
+  if (loading) {
+    return <div className="app-loading">Loading...</div>;
+  }
 
   return (
-    <ToastProvider>
     <div className="app-container">
       <nav className="sidebar">
         <div className="sidebar-logo" onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
           <span className="logo-text">Smart Garden</span>
+          <button className="theme-toggle" onClick={(e) => { e.stopPropagation(); toggle(); }} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+            {theme === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19'}
+          </button>
         </div>
         <nav>
           <div className={view === 'dashboard' || view === 'plant-detail' ? 'nav-item active' : 'nav-item'} onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
@@ -38,7 +49,28 @@ export function App() {
           <div className={view === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => setView('rooms')}>
             <RoomIcon className="nav-icon" /> Rooms
           </div>
+          <div className={view === 'notifications' ? 'nav-item active' : 'nav-item'} onClick={() => setView('notifications')}>
+            <BellIcon className="nav-icon" /> Notifications
+          </div>
         </nav>
+        <div className="sidebar-footer">
+          {user ? (
+            <div className="user-info">
+              <img
+                className="user-avatar"
+                src={user.user_metadata?.avatar_url || ''}
+                alt=""
+                referrerPolicy="no-referrer"
+              />
+              <span className="user-email">{user.email}</span>
+              <button className="btn btn-sm" onClick={signOut}>Sign Out</button>
+            </div>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={signInWithGoogle}>
+              Sign in with Google
+            </button>
+          )}
+        </div>
       </nav>
 
       <main className="content">
@@ -82,8 +114,23 @@ export function App() {
         {view === 'rooms' && (
           <RoomManager />
         )}
+
+        {view === 'notifications' && (
+          <NotificationManager />
+        )}
       </main>
     </div>
-    </ToastProvider>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plant, Reading } from '../types';
+import { Plant, Reading, WateringSchedule } from '../types';
 import { rawToPercent, timeAgo, getMetricRanges, getOverallHealth, getCalibration } from '../lib/calibration';
 import { ZonedGradientBar } from './ZonedGradientBar';
 
@@ -28,6 +28,7 @@ export function PlantCard({ plant, onClick }: Props) {
   const [latestValues, setLatestValues] = useState<Record<string, number>>({});
   const [lastReadingTime, setLastReadingTime] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState(false);
+  const [wateringOverdue, setWateringOverdue] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -90,6 +91,21 @@ export function PlantCard({ plant, onClick }: Props) {
         setLastReadingTime(latestTime);
       }
 
+      // Check watering schedule for overdue
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      try {
+        const schedRes = await fetch(`${apiUrl}/api/plants/${plant.id}/watering-schedule`);
+        if (schedRes.ok) {
+          const schedBody = await schedRes.json();
+          const sched = schedBody.data?.[0] as WateringSchedule | undefined;
+          if (sched?.enabled && sched.next_due_at && new Date(sched.next_due_at) < new Date()) {
+            setWateringOverdue(true);
+          }
+        }
+      } catch {
+        // ignore
+      }
+
       if (!useReference) {
         const { data: alerts } = await supabase
           .from('alerts')
@@ -136,6 +152,11 @@ export function PlantCard({ plant, onClick }: Props) {
       <div className="card-body">
         <div className="card-header-row">
           <h3>{plant.name}</h3>
+          {wateringOverdue && (
+            <span className="watering-overdue-dot" title="Watering overdue">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            </span>
+          )}
           {needsAttention && <span className="attention-dot" />}
         </div>
         {plant.plant_species && <p className="species">{plant.plant_species.name}</p>}

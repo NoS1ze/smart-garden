@@ -4,6 +4,9 @@ set -euo pipefail
 # Smart Garden — Server Setup & Deploy
 # Run from the project root on your Mac
 # Usage: ./deploy-server.sh
+# Usage with HTTPS: DOMAIN=smartgarden.duckdns.org ./deploy-server.sh
+
+DOMAIN="${DOMAIN:-smartgarden.duckdns.org}"
 
 VPS="ubuntu@18.171.135.9"
 KEY="$HOME/.ssh/lightsail-eu-west-2.pem"
@@ -33,8 +36,8 @@ $SCP backend/main.py backend/models.py backend/alerts.py backend/database.py bac
 echo "=== 4. Uploading frontend ==="
 # Build frontend locally first
 echo "  Building frontend..."
-# Reads VITE_ vars from frontend/.env
-(cd frontend && source <(grep '^VITE_' .env | sed 's/^/export /') && VITE_API_URL=http://18.171.135.9 npx vite build)
+# Reads VITE_ vars from frontend/.env, override API URL with HTTPS domain
+(cd frontend && source <(grep '^VITE_' .env | sed 's/^/export /') && VITE_API_URL=https://$DOMAIN npx vite build)
 # Upload dist
 tar -czf /tmp/frontend-dist.tar.gz -C frontend/dist .
 $SCP /tmp/frontend-dist.tar.gz $VPS:/tmp/
@@ -82,26 +85,26 @@ SERVICE
 $SSH "sudo systemctl daemon-reload && sudo systemctl enable smart-garden && sudo systemctl restart smart-garden"
 
 echo "=== 8. Configuring nginx ==="
-$SSH "sudo tee /etc/nginx/sites-available/smart-garden > /dev/null" << 'NGINX'
+$SSH "sudo tee /etc/nginx/sites-available/smart-garden > /dev/null" << NGINX
 server {
     listen 80;
-    server_name 18.171.135.9;
+    server_name $DOMAIN;
 
     # Frontend — static files
     root /opt/smart-garden/frontend/dist;
     index index.html;
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 
     # Backend API — reverse proxy
     location /api/ {
         proxy_pass http://127.0.0.1:8000/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # Health check
@@ -117,13 +120,40 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 REMOTE
 
-echo "=== 9. Verifying ==="
+echo "=== 9. Setting up HTTPS with Let's Encrypt ==="
+$SSH << REMOTE
+set -euo pipefail
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "==> Obtaining SSL certificate..."
+    sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "${CERT_EMAIL:-admin@$DOMAIN}" --redirect
+    echo "==> SSL certificate obtained and nginx configured"
+else
+    echo "==> SSL certificate already exists, renewing if needed..."
+    sudo certbot renew --quiet
+fi
+
+# Ensure auto-renewal timer is enabled
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
+REMOTE
+
+# ── DuckDNS dynamic DNS update ───────────────────────
+if [ -n "${DUCKDNS_TOKEN:-}" ]; then
+    DUCKDNS_DOMAIN="${DOMAIN%.duckdns.org}"
+    $SSH << REMOTE
+CRON_CMD="*/5 * * * * curl -s \"https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=\" > /dev/null 2>&1"
+(crontab -l 2>/dev/null | grep -v duckdns; echo "\$CRON_CMD") | crontab -
+echo "==> DuckDNS cron installed (updates every 5 min)"
+REMOTE
+fi
+
+echo "=== 10. Verifying ==="
 sleep 2
 $SSH "curl -s http://localhost:8000/health && echo '' && curl -s -o /dev/null -w 'Frontend: HTTP %{http_code}\n' http://localhost/"
 
 echo ""
 echo "=== DEPLOYED ==="
-echo "Frontend: http://18.171.135.9/"
-echo "Backend:  http://18.171.135.9/api/"
+echo "Frontend: https://$DOMAIN/"
+echo "Backend:  https://$DOMAIN/api/"
 echo ""
-echo "Next: update firmware config.h API_ENDPOINT to http://18.171.135.9/api/readings"
+echo "Next: update firmware config.h API_ENDPOINT to https://$DOMAIN"

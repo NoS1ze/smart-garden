@@ -14,7 +14,7 @@
  *
  * ESP32                Capacitive Soil Moisture Sensor
  * ------               --------------------------------
- * GPIO33  -----------> AOUT (analog signal)
+ * GPIO32  -----------> AOUT (analog signal)
  * 3V3     -----------> VCC (hardwired on PCB)
  * GND     -----------> GND (hardwired on PCB)
  *
@@ -42,6 +42,7 @@
  */
 
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <HTTPClient.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
@@ -53,10 +54,11 @@
 // Pin definitions
 #define DHT_PIN 22
 #define DHT_TYPE DHT11
-#define SOIL_ANALOG_PIN 33
+#define SOIL_ANALOG_PIN 32
 
 // Calibration reference (12-bit ADC: 0-4095)
-// ~3200 = dry, ~600 = wet (for reference only — frontend handles conversion via soil types)
+// ~3430 = dry (air), ~1360 = wet (submerged)
+// Frontend handles conversion via soil types (raw_dry_12bit / raw_wet_12bit)
 
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 15000
@@ -81,6 +83,10 @@ void setup() {
   Serial.println();
   Serial.println("Smart Garden - DIY MORE ESP32");
   Serial.println("=============================");
+
+  // Configure ADC: 12-bit resolution, 11dB attenuation (full 0-3.3V range)
+  analogReadResolution(12);
+  analogSetPinAttenuation(SOIL_ANALOG_PIN, ADC_11db);
 
   // Initialize DHT sensor
   dht.begin();
@@ -117,8 +123,14 @@ void setup() {
 
   // --- Step 3: Read sensors ---
   // Soil moisture — raw 12-bit ADC value (0-4095)
-  int rawMoisture = analogRead(SOIL_ANALOG_PIN);
-  Serial.printf("Soil - Raw ADC: %d\n", rawMoisture);
+  // Take multiple samples for stability
+  int rawMoisture = 0;
+  for (int i = 0; i < 10; i++) {
+    rawMoisture += analogRead(SOIL_ANALOG_PIN);
+    delay(10);
+  }
+  rawMoisture /= 10;
+  Serial.printf("Soil - Raw ADC (avg of 10): %d\n", rawMoisture);
 
   // DHT11 — temperature (°C) and humidity (%)
   float temperature = dht.readTemperature();
@@ -157,9 +169,10 @@ void setup() {
   Serial.printf("Payload: %s\n", payload.c_str());
 
   // --- Step 5: POST to API ---
+  WiFiClient client;
   HTTPClient http;
   String url = String(API_ENDPOINT) + "/api/readings";
-  http.begin(url);
+  http.begin(client, url);
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(payload);

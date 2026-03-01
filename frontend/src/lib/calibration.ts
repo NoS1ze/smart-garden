@@ -11,7 +11,7 @@ export function getCalibration(
   adcBits: number = 10,
 ): { rawDry: number; rawWet: number } {
   if (!soilType) {
-    return adcBits === 12 ? { rawDry: 3200, rawWet: 600 } : { rawDry: 800, rawWet: 400 };
+    return adcBits === 12 ? { rawDry: 3430, rawWet: 1360 } : { rawDry: 800, rawWet: 400 };
   }
   return adcBits === 12
     ? { rawDry: soilType.raw_dry_12bit, rawWet: soilType.raw_wet_12bit }

@@ -40,20 +40,29 @@ Web Dashboard reads from Supabase
 - Estimated 18650 runtime: ~10 days (dominated by regulator quiescent current)
 
 ### Board 2: DIY MORE ESP32 — "DIY MORE"
-- **MCU**: ESP32-D0WDQ6 rev v1.0, Dual Core 240MHz, WiFi + BT
-- **MAC**: 08:B6:1F:8E:C7:E0
-- **USB**: CH340 on `/dev/cu.usbserial-0001`
+Multiple DIY MORE boards exist with different ESP32 chip revisions but same pinout and firmware:
+
+| Board | MAC | MCU | Chip Rev | USB |
+|-------|-----|-----|----------|-----|
+| DIY MORE #1 (original) | 08:B6:1F:8E:C7:E0 | ESP32-D0WDQ6 | v1.0 | CH340 |
+| DIY MORE #2 | 34:98:7A:BC:3B:BC | ESP32-D0WDQ6 | v1.1 | CH340 |
+| DIY MORE #3 | 7C:9E:BD:F2:5F:54 | ESP32-D0WDQ6 | v1.0 | CH340 |
+| DIY MORE #4 | 10:06:1C:B5:80:18 | ESP32-D0WD-V3 | v3.1 | CH340 |
+
+- **USB**: CH340 on `/dev/cu.usbserial-0001` (some boards have flaky CH340 — may not enumerate)
 - **FQBN**: `esp32:esp32:esp32`
 - **Firmware**: `firmware/diymore/diymore.ino`
 - **Sleep interval**: 1 hour
-- **ADC**: 12-bit (0-4095)
+- **ADC**: 12-bit (0-4095), explicit `analogSetPinAttenuation(pin, ADC_11db)` + `analogReadResolution(12)`
 - **Deep sleep**: Internal RTC timer (no external wiring)
 - **Battery**: Built-in 18650 holder
 
 **Sensors (hardwired to VCC on PCB — cannot be powered off via GPIO):**
 - DHT11: GPIO22 — temperature + humidity
-- Capacitive Soil Moisture: GPIO33 (ADC1_CH5) — analog
-  - Raw calibration: ~3200 = dry, ~600 = wet
+- Capacitive Soil Moisture: **GPIO32** (ADC1_CH4) — analog (NOT GPIO33 as some docs suggest)
+  - Raw calibration: ~3430 = dry (air), ~1360 = wet (submerged)
+  - Tested across 3 boards: air range 3387-3457, water range 1276-1502
+  - Firmware averages 10 samples with 10ms delay for stability
 
 **Power notes:**
 - Sensors always on (~3mA constant drain during deep sleep)
@@ -336,7 +345,7 @@ VITE_API_URL=
 - Firmware sends raw ADC values + `adc_bits` (10 or 12) in POST payload
 - `sensors` table has `adc_bits` column (10 or 12), auto-set from firmware payload
 - `soil_types` table stores dual calibration: `raw_dry`/`raw_wet` (10-bit) and `raw_dry_12bit`/`raw_wet_12bit` (12-bit)
-- Default 10-bit: rawDry=800, rawWet=400 | Default 12-bit: rawDry=3200, rawWet=600
+- Default 10-bit: rawDry=800, rawWet=400 | Default 12-bit: rawDry=3430, rawWet=1360
 - Frontend `getCalibration(soilType, adcBits)` picks the correct pair based on sensor's `adc_bits`
 - Alerts: backend looks up sensor's `adc_bits` + plant's soil type for correct calibration
 
@@ -357,6 +366,7 @@ VITE_API_URL=
 - [x] Data migration: convert existing readings percentage→raw
 - [x] Firmware reflash: send raw ADC values instead of percentages
 - [x] Deployed to AWS Lightsail VPS (18.171.135.9) — nginx + systemd + uvicorn
+- [x] HTTPS support — DuckDNS + Let's Encrypt + certbot, firmware updated for WiFiClientSecure
 - [ ] Google Home (future)
 
 ## Firmware Deployment
@@ -386,6 +396,16 @@ VITE_API_URL=
 - Upload: `arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/cu.usbserial-0001 firmware/diymore`
 - Hold BOOT button while uploading if auto-reset doesn't work
 
+## HTTPS Setup
+- **Domain**: DuckDNS subdomain (e.g., smartgarden.duckdns.org)
+- **SSL**: Let's Encrypt via certbot with nginx plugin
+- **Auto-renewal**: certbot.timer systemd service
+- **Deploy**: set `DOMAIN` env var before running deploy-server.sh (defaults to `smartgarden.duckdns.org`)
+- **DuckDNS cron**: set `DUCKDNS_TOKEN` env var to enable automatic IP updates every 5 min
+- **Firmware**: uses WiFiClientSecure with setInsecure() for HTTPS (skips cert validation — acceptable for IoT)
+- **ESP8266**: BearSSL::WiFiClientSecure (from WiFiClientSecureBearSSL.h)
+- **ESP32**: WiFiClientSecure (from WiFiClientSecure.h)
+
 ## Notes
 - NodeMCU sensor MAC: 8C:CE:4E:CE:66:15 (UUID: cd4d94f1-7ab2-42be-8b42-063aea049f49)
 - DIY MORE sensor MAC: 08:B6:1F:8E:C7:E0 (auto-registers on first POST)
@@ -397,7 +417,8 @@ VITE_API_URL=
 - **Server**: 18.171.135.9 (Ubuntu 22.04, eu-west-2)
 - **SSH**: `ssh -i ~/.ssh/lightsail-eu-west-2.pem ubuntu@18.171.135.9`
 - **Deploy script**: `./deploy-server.sh` (run from project root on Mac)
-- **Frontend**: http://18.171.135.9/ — nginx serves static build from `/opt/smart-garden/frontend/dist`
-- **Backend API**: http://18.171.135.9/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
+- **HTTPS deploy**: `DOMAIN=smartgarden.duckdns.org ./deploy-server.sh` (certbot auto-provisions SSL)
+- **Frontend**: https://smartgarden.duckdns.org/ — nginx serves static build from `/opt/smart-garden/frontend/dist`
+- **Backend API**: https://smartgarden.duckdns.org/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
 - **systemd service**: `smart-garden` — auto-restarts, env from `/opt/smart-garden/backend/.env`
-- **VITE_API_URL**: must be `http://18.171.135.9` (no `/api` suffix — code already prepends `/api/`)
+- **VITE_API_URL**: set automatically by deploy script to `https://$DOMAIN` (no `/api` suffix — code already prepends `/api/`)

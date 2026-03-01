@@ -47,6 +47,7 @@ class ReadingsCreateResponse(BaseModel):
 class ReadingOut(BaseModel):
     id: UUID
     sensor_id: UUID
+    plant_id: Optional[UUID] = None
     metric: str
     value: float
     recorded_at: datetime
@@ -385,6 +386,79 @@ class WateringEventsListResponse(BaseModel):
 class WateringEventCreate(BaseModel):
     plant_id: UUID
     detected_at: Optional[datetime] = None
+
+
+# ── Watering Schedules ──────────────────────────────────
+
+
+class WateringScheduleCreate(BaseModel):
+    interval_days: int = 7
+    notes: Optional[str] = None
+
+
+class WateringScheduleUpdate(BaseModel):
+    interval_days: Optional[int] = None
+    enabled: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class WateringScheduleOut(BaseModel):
+    id: UUID
+    plant_id: UUID
+    interval_days: int
+    last_watered_at: Optional[datetime] = None
+    next_due_at: Optional[datetime] = None
+    enabled: bool
+    notes: Optional[str] = None
+    created_at: datetime
+
+
+class WateringSchedulesListResponse(BaseModel):
+    data: list[WateringScheduleOut]
+    count: int
+
+
+# ── Trends ───────────────────────────────────────────────
+
+
+class TrendPoint(BaseModel):
+    day: str  # ISO date string
+    avg: float
+    min: float
+    max: float
+
+
+class TrendResponse(BaseModel):
+    metric: str
+    period: str
+    current_avg: float
+    previous_avg: Optional[float] = None
+    trend: str  # "up", "down", "stable"
+    change_pct: Optional[float] = None
+    points: list[TrendPoint]
+
+
+# ── Notification Channels ───────────────────────────────
+
+class NotificationChannelCreate(BaseModel):
+    channel_type: str  # email, telegram, discord, webhook
+    config: dict = {}
+    enabled: bool = True
+
+class NotificationChannelUpdate(BaseModel):
+    config: Optional[dict] = None
+    enabled: Optional[bool] = None
+
+class NotificationChannelOut(BaseModel):
+    id: UUID
+    channel_type: str
+    config: dict
+    enabled: bool
+    created_at: datetime
+
+class NotificationChannelsListResponse(BaseModel):
+    data: list[NotificationChannelOut]
+    count: int
 
 
 class StatusResponse(BaseModel):

@@ -3,7 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label
 } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { Reading, Metric, METRICS, SoilType, PlantSpecies } from '../types';
+import { Reading, Metric, METRICS, SoilType, PlantSpecies, WateringEvent } from '../types';
 import { rawToPercent, timeAgo, getCalibration } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
@@ -23,9 +23,10 @@ interface Props {
   soilType?: SoilType | null;
   plantSpecies?: PlantSpecies | null;
   adcBits?: number;
+  plantId?: string;
 }
 
-export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: Props) {
+export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, plantId }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
   const [range, setRange] = useState<Range>('24h');
@@ -35,7 +36,9 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: 
   const [latest, setLatest] = useState<Reading | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wateringEvents, setWateringEvents] = useState<WateringEvent[]>([]);
 
+  const apiUrl = import.meta.env.VITE_API_URL || '';
   const metricInfo = METRICS.find((m) => m.key === metric)!;
 
   const fetchReadings = useCallback(async () => {
@@ -109,6 +112,22 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: 
     }
   }, [sensorId, metric]);
 
+  const fetchWateringEvents = useCallback(async () => {
+    if (metric !== 'soil_moisture' || !plantId) {
+      setWateringEvents([]);
+      return;
+    }
+    try {
+      const res = await fetch(`${apiUrl}/api/plants/${plantId}/watering-events?limit=50`);
+      if (res.ok) {
+        const json = await res.json();
+        setWateringEvents(json.data ?? []);
+      }
+    } catch {
+      // ignore
+    }
+  }, [metric, plantId, apiUrl]);
+
   useEffect(() => {
     fetchAvailableMetrics();
   }, [sensorId]);
@@ -116,12 +135,14 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: 
   useEffect(() => {
     fetchReadings();
     fetchLatest();
+    fetchWateringEvents();
     const interval = setInterval(() => {
       fetchReadings();
       fetchLatest();
+      fetchWateringEvents();
     }, 60000);
     return () => clearInterval(interval);
-  }, [fetchReadings, fetchLatest]);
+  }, [fetchReadings, fetchLatest, fetchWateringEvents]);
 
   const { rawDry, rawWet } = getCalibration(soilType, adcBits);
   const convertValue = (v: number) =>
@@ -340,6 +361,21 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10 }: 
               labelFormatter={(ts) => new Date(ts as number).toLocaleString()}
             />
             {getReferenceLines()}
+            {metric === 'soil_moisture' && wateringEvents.map((we) => {
+              const ts = new Date(we.detected_at).getTime();
+              return (
+                <ReferenceLine
+                  key={we.id}
+                  x={ts}
+                  stroke="#3b82f6"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.6}
+                >
+                  <Label value="W" position="top" fill="#3b82f6" fontSize={10} />
+                </ReferenceLine>
+              );
+            })}
             <Area
               type="monotone"
               dataKey="value"
