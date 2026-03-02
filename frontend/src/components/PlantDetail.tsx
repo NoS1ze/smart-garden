@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { Plant, Sensor, SoilType, PlantSpecies, Room, Reading, WateringSchedule } from '../types';
 import { MetricChart } from './MetricChart';
-import { TrendCard } from './TrendCard';
 import { AlertsPanel } from './AlertsPanel';
 import { AlertHistory } from './AlertHistory';
 import { WateringLog } from './WateringLog';
 import { PhotoUpload } from './PhotoUpload';
 import { rawToPercent, timeAgo, getMetricStatus, getMetricRanges, getCalibration } from '../lib/calibration';
-import { ZonedGradientBar } from './ZonedGradientBar';
+import { ZonedGradientBar, getZoneLabel } from './ZonedGradientBar';
+import { MetricIcon } from './Icons';
 import { useToast } from './Toast';
 
 interface Props {
@@ -17,13 +18,128 @@ interface Props {
 }
 
 const DETAIL_METRICS = [
-  { key: 'soil_moisture', label: 'Moisture', unit: '%', accent: '#14b8a6' },
-  { key: 'temperature', label: 'Temperature', unit: '°C', accent: '#f59e0b' },
-  { key: 'humidity', label: 'Humidity', unit: '%', accent: '#60a5fa' },
-  { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm', accent: '#a78bfa' },
-  { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb', accent: '#f472b6' },
-  { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa', accent: '#94a3b8' },
+  { key: 'soil_moisture', label: 'Moisture', unit: '%' },
+  { key: 'temperature', label: 'Temperature', unit: '°C' },
+  { key: 'humidity', label: 'Humidity', unit: '%' },
+  { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm' },
+  { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb' },
+  { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa' },
 ];
+
+const ACCENT_COLORS: Record<string, string> = {
+  soil_moisture: 'var(--metric-moisture)',
+  temperature: 'var(--metric-temperature)',
+  humidity: 'var(--metric-humidity)',
+  co2_ppm: 'var(--metric-co2)',
+  tvoc_ppb: 'var(--metric-tvoc)',
+  pressure_hpa: 'var(--metric-pressure)',
+  light_lux: 'var(--metric-light)',
+};
+
+const cssVar = (name: string, fallback: string) => {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  } catch { return fallback; }
+};
+
+const resolveColor = (color: string): string => {
+  const match = color.match(/^var\(([^)]+)\)$/);
+  if (match) return cssVar(match[1], '#22c55e');
+  return color;
+};
+
+function useTrendData(apiUrl: string, sensorId: string | undefined, metric: string, convertValue?: (raw: number) => number) {
+  const [trendData, setTrendData] = useState<{ points: { avg: number }[]; trend: string; change_pct: number | null } | null>(null);
+  useEffect(() => {
+    if (!sensorId) return;
+    fetch(`${apiUrl}/api/readings/trends?sensor_id=${sensorId}&metric=${metric}&period=7d`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        const cv = convertValue || ((v: number) => v);
+        const points = (data.points || [])
+          .filter((p: any) => p.avg != null && isFinite(p.avg))
+          .map((p: any) => ({ avg: cv(p.avg) }));
+        let change_pct = data.change_pct;
+        if (convertValue && data.current_avg != null && data.previous_avg != null && isFinite(data.previous_avg)) {
+          const cur = cv(data.current_avg);
+          const prev = cv(data.previous_avg);
+          change_pct = prev !== 0 ? Math.round(((cur - prev) / Math.abs(prev)) * 1000) / 10 : 0;
+        }
+        setTrendData({ points, trend: data.trend || 'stable', change_pct });
+      })
+      .catch(() => {});
+  }, [apiUrl, sensorId, metric]);
+  return trendData;
+}
+
+interface MetricTileProps {
+  metricKey: string;
+  label: string;
+  unit: string;
+  value: number;
+  ranges: { min: number | null; optMin: number | null; optMax: number | null; max: number | null };
+  status: { status: string };
+  panelStale: boolean;
+  sensorId: string | undefined;
+  apiUrl: string;
+  convertValue?: (raw: number) => number;
+}
+
+function MetricTile({ metricKey, label, unit, value, ranges, status, panelStale, sensorId, apiUrl, convertValue }: MetricTileProps) {
+  const trendData = useTrendData(apiUrl, sensorId, metricKey, convertValue);
+  const hasRanges = ranges.min != null && ranges.optMin != null && ranges.optMax != null && ranges.max != null;
+  const zoneInfo = hasRanges
+    ? getZoneLabel(value, ranges.min!, ranges.optMin!, ranges.optMax!, ranges.max!)
+    : null;
+  const accent = resolveColor(ACCENT_COLORS[metricKey] || 'var(--green-vivid)');
+
+  return (
+    <div className="metric-tile">
+      <div className="metric-tile-icon" style={{ color: ACCENT_COLORS[metricKey] }}>
+        <MetricIcon metric={metricKey} size={20} />
+      </div>
+      <div className="metric-tile-value">
+        {value.toFixed(metricKey === 'temperature' ? 1 : 0)}
+        <span className="metric-tile-unit">{unit}</span>
+      </div>
+      <div className="metric-tile-label">{label}</div>
+      <ZonedGradientBar
+        value={value}
+        min={ranges.min}
+        optMin={ranges.optMin}
+        optMax={ranges.optMax}
+        max={ranges.max}
+        isStale={panelStale}
+        accentColor={ACCENT_COLORS[metricKey]}
+      />
+      {zoneInfo && (
+        <div className={`metric-tile-status ${status.status}`}>
+          {zoneInfo.text}
+        </div>
+      )}
+      {trendData && trendData.points.length > 1 && (
+        <div className="metric-tile-trend">
+          <div className="metric-tile-sparkline">
+            <ResponsiveContainer width="100%" height={28}>
+              <AreaChart data={trendData.points}>
+                <Area type="natural" dataKey="avg" stroke={accent}
+                      fill={accent} fillOpacity={0.06}
+                      strokeWidth={1.5} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          {trendData.change_pct != null && (
+            <span className={`metric-tile-change ${trendData.trend}`}>
+              {trendData.trend === 'up' ? '\u2191' : trendData.trend === 'down' ? '\u2193' : '\u2192'}
+              {trendData.change_pct > 0 ? '+' : ''}{trendData.change_pct}%
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function PlantDetail({ plantId, onBack }: Props) {
   const [plant, setPlant] = useState<Plant | null>(null);
@@ -56,7 +172,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
 
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [trendPeriod, setTrendPeriod] = useState('7d');
+
 
   // Watering schedule state
   const [schedule, setSchedule] = useState<WateringSchedule | null>(null);
@@ -367,277 +483,215 @@ export function PlantDetail({ plantId, onBack }: Props) {
 
   return (
     <div className="plant-detail">
-      <button className="btn-back" onClick={onBack}>&larr; Back</button>
+      <div className="plant-detail-topbar">
+        <button className="btn-back" onClick={onBack}>&larr; Back</button>
+        {!editing && (
+          <button className="btn-edit" onClick={() => {
+            setEditSensorIds(new Set(usingReference ? [] : sensors.map(s => s.id)));
+            setEditing(true);
+          }}>&#9998; Edit</button>
+        )}
+      </div>
 
       {error && <p className="status error">{error}</p>}
 
-      {/* Unified Header: Image | Info | Metrics Panel */}
-      <div className="plant-detail-header">
-        {plant.photo_url ? (
-          <img className="plant-detail-photo" src={plant.photo_url} alt={plant.name} />
-        ) : (
-          <div className="plant-detail-photo-placeholder">&#127807;</div>
-        )}
-        <div className="plant-detail-info">
-          {editing ? (
-            <div className="plant-edit-form">
-              <label>
-                Name
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} />
-              </label>
-              <label>
-                Plant Species
-                <select value={editPlantSpeciesId} onChange={(e) => setEditPlantSpeciesId(e.target.value)}>
-                  <option value="">None</option>
-                  {plantSpecies.map((ps) => (
-                    <option key={ps.id} value={ps.id}>{ps.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Room
-                <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)}>
-                  <option value="">None</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Sensor source
-                <div className="sensor-source-toggle">
-                  <button
-                    type="button"
-                    className={`source-btn ${editSensorIds.size > 0 ? 'active' : ''}`}
-                    onClick={() => { setEditReferencePlantId(''); }}
-                  >
-                    Direct sensor
-                  </button>
-                  <button
-                    type="button"
-                    className={`source-btn ${editReferencePlantId ? 'active' : ''}`}
-                    onClick={() => { setEditSensorIds(new Set()); }}
-                  >
-                    Reference plant
-                  </button>
-                </div>
-              </label>
-              {!editReferencePlantId ? (
-                <label>
-                  Sensors
-                  <div className="sensor-checklist">
-                    {allSensors.map((s) => (
-                      <label key={s.id} className="sensor-check-item">
-                        <input
-                          type="checkbox"
-                          checked={editSensorIds.has(s.id)}
-                          onChange={(e) => {
-                            const next = new Set(editSensorIds);
-                            if (e.target.checked) next.add(s.id);
-                            else next.delete(s.id);
-                            setEditSensorIds(next);
-                            setEditReferencePlantId('');
-                          }}
-                        />
-                        {s.display_name || s.location || s.mac_address}
-                      </label>
-                    ))}
-                    {allSensors.length === 0 && <span className="sensor-check-empty">No sensors registered yet</span>}
-                  </div>
-                </label>
-              ) : (
-                <label>
-                  Reference sensor from
-                  <select value={editReferencePlantId} onChange={(e) => {
-                    setEditReferencePlantId(e.target.value);
-                    if (e.target.value) setEditSensorIds(new Set());
-                  }}>
-                    <option value="">None</option>
-                    {allPlants.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label>
-                Planted Date
-                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
-              </label>
-              <label>
-                Photo
-                <PhotoUpload currentUrl={editPhoto || null} onUrlChange={(url) => setEditPhoto(url || '')} />
-              </label>
-              <label>
-                Notes
-                <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
-              </label>
-              <label>
-                Soil Type
-                <select value={editSoilTypeId} onChange={(e) => setEditSoilTypeId(e.target.value)}>
-                  <option value="">None (default calibration)</option>
-                  {soilTypes.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.name} (dry={st.raw_dry}, wet={st.raw_wet})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="form-actions">
-                <button className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
-                <button className="btn-primary" onClick={savePlant} disabled={saving || !editName.trim()}>
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
+      {/* Identity Header */}
+      {editing ? (
+        <div className="plant-edit-form">
+          <label>
+            Name
+            <input value={editName} onChange={(e) => setEditName(e.target.value)} />
+          </label>
+          <label>
+            Plant Species
+            <select value={editPlantSpeciesId} onChange={(e) => setEditPlantSpeciesId(e.target.value)}>
+              <option value="">None</option>
+              {plantSpecies.map((ps) => (
+                <option key={ps.id} value={ps.id}>{ps.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Room
+            <select value={editRoomId} onChange={(e) => setEditRoomId(e.target.value)}>
+              <option value="">None</option>
+              {rooms.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Sensor source
+            <div className="sensor-source-toggle">
+              <button
+                type="button"
+                className={`source-btn ${editSensorIds.size > 0 ? 'active' : ''}`}
+                onClick={() => { setEditReferencePlantId(''); }}
+              >
+                Direct sensor
+              </button>
+              <button
+                type="button"
+                className={`source-btn ${editReferencePlantId ? 'active' : ''}`}
+                onClick={() => { setEditSensorIds(new Set()); }}
+              >
+                Reference plant
+              </button>
             </div>
-          ) : (
-            <>
-              <h2>{plant.name}</h2>
-              {tags.length > 0 && (
-                <div className="detail-tags">
-                  {tags.map((t) => (
-                    <span key={t.label} className="detail-tag" style={t.color ? { color: t.color } : undefined}>
-                      <span className="detail-tag-label">{t.label}</span> {t.value}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {plant.notes ? (
-                <p className="plant-detail-notes">
-                  <span className="quote-mark">&ldquo;</span>{plant.notes}
-                </p>
-              ) : (
-                <p className="plant-detail-notes empty">
-                  No description added yet — tap Edit to add care notes.
-                </p>
-              )}
-              <div>
-                <button className="btn-edit" onClick={() => {
-                  setEditSensorIds(new Set(usingReference ? [] : sensors.map(s => s.id)));
-                  setEditing(true);
-                }}>&#9998; Edit</button>
+          </label>
+          {!editReferencePlantId ? (
+            <label>
+              Sensors
+              <div className="sensor-checklist">
+                {allSensors.map((s) => (
+                  <label key={s.id} className="sensor-check-item">
+                    <input
+                      type="checkbox"
+                      checked={editSensorIds.has(s.id)}
+                      onChange={(e) => {
+                        const next = new Set(editSensorIds);
+                        if (e.target.checked) next.add(s.id);
+                        else next.delete(s.id);
+                        setEditSensorIds(next);
+                        setEditReferencePlantId('');
+                      }}
+                    />
+                    {s.display_name || s.location || s.mac_address}
+                  </label>
+                ))}
+                {allSensors.length === 0 && <span className="sensor-check-empty">No sensors registered yet</span>}
               </div>
-            </>
+            </label>
+          ) : (
+            <label>
+              Reference sensor from
+              <select value={editReferencePlantId} onChange={(e) => {
+                setEditReferencePlantId(e.target.value);
+                if (e.target.value) setEditSensorIds(new Set());
+              }}>
+                <option value="">None</option>
+                {allPlants.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
           )}
+          <label>
+            Planted Date
+            <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+          </label>
+          <label>
+            Photo
+            <PhotoUpload currentUrl={editPhoto || null} onUrlChange={(url) => setEditPhoto(url || '')} />
+          </label>
+          <label>
+            Notes
+            <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} />
+          </label>
+          <label>
+            Soil Type
+            <select value={editSoilTypeId} onChange={(e) => setEditSoilTypeId(e.target.value)}>
+              <option value="">None (default calibration)</option>
+              {soilTypes.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name} (dry={st.raw_dry}, wet={st.raw_wet})
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="form-actions">
+            <button className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn-primary" onClick={savePlant} disabled={saving || !editName.trim()}>
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
-
-        {/* Right column: Metrics Panel */}
-        {availableMetrics.length > 0 ? (() => {
-          const PANEL_ICONS: Record<string, JSX.Element> = {
-            soil_moisture: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#14b8a6'}}><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>,
-            temperature: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#f59e0b'}}><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>,
-            humidity: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#60a5fa'}}><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/><path d="M6 14h12" opacity="0.5"/><path d="M7.5 18h9" opacity="0.5"/></svg>,
-            co2_ppm: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#a78bfa'}}><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>,
-            tvoc_ppb: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#f472b6'}}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>,
-            pressure_hpa: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:'#94a3b8'}}><path d="M12 2v20M2 12h20"/></svg>,
-          };
-          const PANEL_LABELS: Record<string, string> = { soil_moisture: 'MOISTURE', temperature: 'TEMP', humidity: 'HUMIDITY', co2_ppm: 'CO\u2082', tvoc_ppb: 'TVOC', pressure_hpa: 'PRESSURE' };
-          const metricStatuses = availableMetrics.map((m) =>
-            getMetricStatus(displayValues[m.key], plant.plant_species, m.key)
-          );
-          const worstStatus = metricStatuses.some(s => s.status === 'critical') ? 'critical'
-            : metricStatuses.some(s => s.status === 'acceptable') ? 'warning' : 'optimal';
-          const badgeText = worstStatus === 'optimal' ? '\u25CF All readings optimal'
-            : worstStatus === 'warning' ? '\u26A0 Needs attention' : '\u2717 Action required';
-          const badgeClass = worstStatus;
-          const panelStale = lastReadingTime ? timeAgo(lastReadingTime).staleness === 'dead' : false;
-
-          return (
-            <div className="metrics-panel">
-              <div className={`metrics-panel-badge ${badgeClass}`}>{badgeText}</div>
-              {availableMetrics.map((m) => {
-                const val = displayValues[m.key];
-                const ranges = getMetricRanges(plant.plant_species, m.key);
-                return (
-                  <div key={m.key} className="metrics-panel-row">
-                    <span className="metrics-panel-icon">{PANEL_ICONS[m.key] || null}</span>
-                    <span className="metrics-panel-label">{PANEL_LABELS[m.key] || m.label}</span>
-                    <div className="metrics-panel-bar">
-                      <ZonedGradientBar
-                        value={val}
-                        min={ranges.min}
-                        optMin={ranges.optMin}
-                        optMax={ranges.optMax}
-                        max={ranges.max}
-                        isStale={panelStale}
-                      />
-                    </div>
-                    <span className="metrics-panel-value">
-                      {val.toFixed(m.key === 'temperature' ? 1 : 0)}{m.unit}
-                    </span>
-                  </div>
-                );
-              })}
+      ) : (
+        <div className="section-card plant-detail-header">
+          {plant.photo_url ? (
+            <img className="plant-detail-photo" src={plant.photo_url} alt={plant.name} />
+          ) : (
+            <div className="plant-detail-photo-placeholder">&#127807;</div>
+          )}
+          <div className="plant-detail-info">
+            <div className="plant-detail-name-row">
+              <h2>{plant.name}</h2>
               {lastReadingTime && (() => {
                 const { text, staleness } = timeAgo(lastReadingTime);
-                const dotColor = worstStatus === 'optimal' ? '#4ade80' : worstStatus === 'warning' ? '#f59e0b' : '#ef4444';
                 return (
-                  <div className="metrics-panel-footer" title={new Date(lastReadingTime).toLocaleString()}>
-                    <span className={`staleness-dot ${staleness}`} style={{ background: dotColor, boxShadow: `0 0 6px ${dotColor}` }} />
+                  <span className="staleness-indicator plant-detail-staleness" title={new Date(lastReadingTime).toLocaleString()}>
+                    <span className={`staleness-dot ${staleness}`} />
                     {text}
-                  </div>
+                  </span>
                 );
               })()}
             </div>
-          );
-        })() : <div />}
-      </div>
+            {tags.length > 0 && (
+              <div className="detail-tags">
+                {tags.map((t) => (
+                  <span key={t.label} className="detail-tag" style={t.color ? { color: t.color } : undefined}>
+                    <span className="detail-tag-label">{t.label}</span> {t.value}
+                  </span>
+                ))}
+              </div>
+            )}
+            {plant.notes && (
+              <p className="plant-detail-notes">
+                <span className="quote-mark">&ldquo;</span>{plant.notes}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Metric Tiles Grid (with embedded trend sparklines) */}
+      {!editing && availableMetrics.length > 0 && (() => {
+        const panelStale = lastReadingTime ? timeAgo(lastReadingTime).staleness === 'dead' : false;
+        const tileConvert = (key: string) =>
+          key === 'soil_moisture' ? (raw: number) => rawToPercent(raw, rawDry, rawWet) : undefined;
+        return (
+          <div className="section-card">
+            <h3 className="section-heading">Current Readings</h3>
+            <div className="metric-tiles-grid" style={{
+              gridTemplateColumns: `repeat(${Math.min(availableMetrics.length, 4)}, 1fr)`
+            }}>
+            {availableMetrics.map((m) => (
+              <MetricTile
+                key={m.key}
+                metricKey={m.key}
+                label={m.label}
+                unit={m.unit}
+                value={displayValues[m.key]}
+                ranges={getMetricRanges(plant.plant_species, m.key)}
+                status={getMetricStatus(displayValues[m.key], plant.plant_species, m.key)}
+                panelStale={panelStale}
+                sensorId={sensors.length > 0 ? sensors[0].id : undefined}
+                apiUrl={apiUrl}
+                convertValue={tileConvert(m.key)}
+              />
+            ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Charts */}
       {sensors.length > 0 && (
-        <section className="detail-section">
-          <h3>Charts</h3>
+        <div className="section-card">
+          <h3 className="section-heading">Charts</h3>
           {sensors.map((s) => (
             <div key={s.id} className="chart-section">
               {!singleSensor && <h4>{s.display_name || s.location || 'Sensor'}</h4>}
               <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantSpecies={plant?.plant_species} adcBits={s.adc_bits ?? 10} plantId={plantId} />
             </div>
           ))}
-        </section>
-      )}
-
-      {/* Trends */}
-      {sensors.length > 0 && (
-        <section className="detail-section trends-section">
-          <h3>Trends</h3>
-          <div className="trends-period-tabs">
-            {(['7d', '30d', '90d'] as const).map((p) => (
-              <button
-                key={p}
-                className={`trends-period-tab${trendPeriod === p ? ' active' : ''}`}
-                onClick={() => setTrendPeriod(p)}
-              >
-                {p.replace('d', ' days')}
-              </button>
-            ))}
-          </div>
-          <div className="trends-grid">
-            {[
-              { key: 'soil_moisture', label: 'Moisture', unit: '%', color: '#60a5fa' },
-              { key: 'temperature', label: 'Temperature', unit: '\u00b0C', color: '#f97316' },
-              { key: 'humidity', label: 'Humidity', unit: '%', color: '#14b8a6' },
-              { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm', color: '#a78bfa' },
-              { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb', color: '#f472b6' },
-              { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa', color: '#fbbf24' },
-            ].map((m) => (
-              <TrendCard
-                key={`${sensors[0].id}-${m.key}-${trendPeriod}`}
-                sensorId={sensors[0].id}
-                metric={m.key}
-                label={m.label}
-                unit={m.unit}
-                period={trendPeriod}
-                apiUrl={apiUrl}
-                color={m.color}
-              />
-            ))}
-          </div>
-        </section>
+        </div>
       )}
 
       {/* Alerts + History — only for directly assigned sensors */}
       {sensors.length > 0 && !usingReference && (
-        <section className="detail-section">
-          <h3>Alerts</h3>
+        <div className="section-card">
+          <h3 className="section-heading">Alerts</h3>
           {sensors.map((s) => (
             <div key={s.id}>
               {!singleSensor && <h4>{s.display_name || s.location || 'Sensor'}</h4>}
@@ -647,12 +701,12 @@ export function PlantDetail({ plantId, onBack }: Props) {
               </div>
             </div>
           ))}
-        </section>
+        </div>
       )}
 
-      {/* Watering Schedule */}
-      <section className="detail-section">
-        <h3>Watering Schedule</h3>
+      {/* Care: Watering Schedule + Log */}
+      <div className="section-card">
+        <h3 className="section-heading">Care</h3>
         {schedule ? (
           <div className="watering-schedule-card">
             <div className="watering-schedule-info">
@@ -745,12 +799,10 @@ export function PlantDetail({ plantId, onBack }: Props) {
             </button>
           </div>
         )}
-      </section>
-
-      {/* Watering Log */}
-      <section className="detail-section">
-        <WateringLog plantId={plantId} apiUrl={apiUrl} />
-      </section>
+        <div style={{ marginTop: '24px', borderTop: '1px solid var(--border-subtle)', paddingTop: '20px' }}>
+          <WateringLog plantId={plantId} apiUrl={apiUrl} />
+        </div>
+      </div>
 
       {/* Delete Plant — bottom of page */}
       <div className="danger-zone">

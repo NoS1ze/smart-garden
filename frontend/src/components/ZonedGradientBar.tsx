@@ -5,26 +5,46 @@ interface ZonedGradientBarProps {
   optMax?: number | null;
   max?: number | null;
   isStale?: boolean;
+  accentColor?: string;
 }
 
-function getZoneColor(value: number, min: number, optMin: number, optMax: number, max: number): string {
-  if (value < min) return '#ef4444';
-  if (value < optMin) return '#f59e0b';
-  if (value <= optMax) return '#4ade80';
-  if (value <= max) return '#f59e0b';
-  return '#ef4444';
+const cssVar = (name: string, fallback: string) => {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  } catch { return fallback; }
+};
+
+const resolveColor = (color: string): string => {
+  const match = color.match(/^var\(([^)]+)\)$/);
+  if (match) return cssVar(match[1], '#22c55e');
+  return color;
+};
+
+export function getZoneColor(value: number, min: number, optMin: number, optMax: number, max: number): string {
+  const red = cssVar('--red-alert', '#ef4444');
+  const amber = cssVar('--amber', '#f59e0b');
+  const green = cssVar('--green-soft', '#4ade80');
+  if (value < min) return red;
+  if (value < optMin) return amber;
+  if (value <= optMax) return green;
+  if (value <= max) return amber;
+  return red;
 }
 
-function getZoneLabel(value: number, min: number, optMin: number, optMax: number, max: number): { text: string; color: string } {
-  if (value < min) return { text: 'Too low', color: '#ef4444' };
-  if (value < optMin) return { text: 'Getting low', color: '#f59e0b' };
-  if (value <= optMax) return { text: 'Optimal', color: '#4ade80' };
-  if (value <= max) return { text: 'Getting high', color: '#f59e0b' };
-  return { text: 'Too high', color: '#ef4444' };
+export function getZoneLabel(value: number, min: number, optMin: number, optMax: number, max: number): { text: string; color: string } {
+  const red = cssVar('--red-alert', '#ef4444');
+  const amber = cssVar('--amber', '#f59e0b');
+  const green = cssVar('--green-soft', '#4ade80');
+  if (value < min) return { text: 'Too low', color: red };
+  if (value < optMin) return { text: 'Getting low', color: amber };
+  if (value <= optMax) return { text: 'Optimal', color: green };
+  if (value <= max) return { text: 'Getting high', color: amber };
+  return { text: 'Too high', color: red };
 }
 
-export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale }: ZonedGradientBarProps) {
+export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale, accentColor }: ZonedGradientBarProps) {
   const hasRanges = min != null && optMin != null && optMax != null && max != null && max > 0;
+  const accent = accentColor ? resolveColor(accentColor) : cssVar('--green-vivid', '#22c55e');
 
   if (!hasRanges) {
     const fillPct = Math.max(0, Math.min(100, value));
@@ -33,16 +53,16 @@ export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale }: Z
         <div style={{
           position: 'relative',
           width: '100%',
-          height: '6px',
-          borderRadius: '3px',
-          background: 'rgba(255,255,255,0.08)',
+          height: '4px',
+          borderRadius: '2px',
+          background: cssVar('--border-subtle', 'rgba(255,255,255,0.12)'),
           opacity: isStale ? 0.4 : 1,
         }}>
           <div style={{
             width: `${fillPct}%`,
             height: '100%',
-            borderRadius: '3px',
-            background: '#16a34a',
+            borderRadius: '2px',
+            background: `${accent}66`,
             transition: 'width 0.4s ease',
           }} />
         </div>
@@ -59,29 +79,28 @@ export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale }: Z
   const pct = (v: number) => `${((v / overflow) * 100).toFixed(1)}%`;
 
   const gradientStops = [
-    `#5c0a0a ${pct(0)}`,
-    `#991b1b ${pct(_min * 0.5)}`,
-    `#b45309 ${pct(_min)}`,
-    `#ca8a04 ${pct(_optMin)}`,
-    `#16a34a ${pct((_optMin + _optMax) / 2)}`,
-    `#ca8a04 ${pct(_optMax)}`,
-    `#b45309 ${pct(_max)}`,
-    `#991b1b ${pct(_max * 1.1)}`,
-    `#5c0a0a 100%`,
+    `transparent ${pct(0)}`,
+    `transparent ${pct(_min)}`,
+    `${accent}33 ${pct(_min)}`,
+    `${accent}66 ${pct(_optMin)}`,
+    `${accent}73 ${pct((_optMin + _optMax) / 2)}`,
+    `${accent}66 ${pct(_optMax)}`,
+    `${accent}33 ${pct(_max)}`,
+    `transparent ${pct(_max)}`,
+    `transparent 100%`,
   ];
 
-  const background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+  const trackBg = cssVar('--bg-glass-border', 'rgba(255,255,255,0.08)');
+  const background = `linear-gradient(to right, ${gradientStops.join(', ')}), ${trackBg}`;
   const dotLeftPct = Math.max(2, Math.min((value / overflow) * 100, 98));
-  const zoneColor = getZoneColor(value, _min, _optMin, _optMax, _max);
-  const { text: zoneText, color: labelColor } = getZoneLabel(value, _min, _optMin, _optMax, _max);
 
   return (
     <div style={{ width: '100%' }}>
       <div style={{
         position: 'relative',
         width: '100%',
-        height: '6px',
-        borderRadius: '3px',
+        height: '4px',
+        borderRadius: '2px',
         background,
         opacity: isStale ? 0.4 : 1,
       }}>
@@ -90,24 +109,15 @@ export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale }: Z
           left: `${dotLeftPct}%`,
           top: '50%',
           transform: 'translate(-50%, -50%)',
-          width: '12px',
-          height: '12px',
+          width: '10px',
+          height: '10px',
           borderRadius: '50%',
-          background: '#ffffff',
-          border: `2px solid ${zoneColor}`,
-          boxShadow: `0 0 6px 2px ${zoneColor}80`,
+          background: '#fff',
+          border: `2px solid ${accent}`,
+          boxShadow: `0 0 4px 1px ${accent}40`,
           zIndex: 2,
           transition: 'left 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease',
         }} />
-      </div>
-      <div style={{
-        fontSize: '10px',
-        fontWeight: 500,
-        color: labelColor,
-        marginTop: '2px',
-        lineHeight: 1,
-      }}>
-        {zoneText}
       </div>
     </div>
   );

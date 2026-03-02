@@ -31,7 +31,7 @@ export function timeAgo(isoString: string): { text: string; staleness: 'fresh' |
   else if (diffDay < 7) text = `${diffDay}d ago`;
   else text = new Date(isoString).toLocaleDateString();
 
-  const staleness = diffMin < 15 ? 'fresh' : diffMin < 60 ? 'stale' : 'dead';
+  const staleness = diffMin < 75 ? 'fresh' : diffMin < 180 ? 'stale' : 'dead';
   return { text, staleness };
 }
 

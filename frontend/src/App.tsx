@@ -63,10 +63,10 @@ function AppContent() {
                 referrerPolicy="no-referrer"
               />
               <span className="user-email">{user.email}</span>
-              <button className="btn btn-sm" onClick={signOut}>Sign Out</button>
+              <button className="btn-secondary btn-sm" onClick={signOut}>Sign Out</button>
             </div>
           ) : (
-            <button className="btn btn-primary btn-sm" onClick={signInWithGoogle}>
+            <button className="btn-primary btn-sm" onClick={signInWithGoogle}>
               Sign in with Google
             </button>
           )}

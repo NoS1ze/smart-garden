@@ -3,6 +3,17 @@ import { supabase } from '../lib/supabase';
 import { Plant, Reading, WateringSchedule } from '../types';
 import { rawToPercent, timeAgo, getMetricRanges, getOverallHealth, getCalibration } from '../lib/calibration';
 import { ZonedGradientBar } from './ZonedGradientBar';
+import { MoistureIcon } from './Icons';
+
+const ACCENT_COLORS: Record<string, string> = {
+  soil_moisture: 'var(--metric-moisture)',
+  temperature: 'var(--metric-temperature)',
+  humidity: 'var(--metric-humidity)',
+  co2_ppm: 'var(--metric-co2)',
+  tvoc_ppb: 'var(--metric-tvoc)',
+  pressure_hpa: 'var(--metric-pressure)',
+  light_lux: 'var(--metric-light)',
+};
 
 interface Props {
   plant: Plant;
@@ -154,7 +165,7 @@ export function PlantCard({ plant, onClick }: Props) {
           <h3>{plant.name}</h3>
           {wateringOverdue && (
             <span className="watering-overdue-dot" title="Watering overdue">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+              <MoistureIcon size={14} />
             </span>
           )}
           {needsAttention && <span className="attention-dot" />}
@@ -174,6 +185,7 @@ export function PlantCard({ plant, onClick }: Props) {
                     optMax={ranges.optMax}
                     max={ranges.max}
                     isStale={isStale}
+                    accentColor={ACCENT_COLORS[m.key]}
                   />
                   <span className="health-bar-value">
                     {latestValues[m.key].toFixed(m.key === 'temperature' ? 1 : 0)}{m.unit}

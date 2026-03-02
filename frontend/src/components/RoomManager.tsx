@@ -17,6 +17,7 @@ export function RoomManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchRooms = useCallback(async () => {
@@ -89,7 +90,7 @@ export function RoomManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this room? Plants in it will become ungrouped.')) return;
+    setConfirmDeleteId(null);
     setError(null);
     try {
       const res = await fetch(`${apiUrl}/api/rooms/${id}`, { method: 'DELETE' });
@@ -166,8 +167,8 @@ export function RoomManager() {
                     />
                   </div>
                   <div className="form-actions">
-                    <button className="btn-small btn-primary" onClick={() => handleEdit(room.id)}>Save</button>
-                    <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button className="btn-sm btn-primary" onClick={() => handleEdit(room.id)}>Save</button>
+                    <button className="btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -179,8 +180,15 @@ export function RoomManager() {
                     </span>
                   </div>
                   <div className="soil-actions">
-                    <button className="btn-small btn-secondary" onClick={() => startEdit(room)}>Edit</button>
-                    <button className="btn-small btn-danger" onClick={() => handleDelete(room.id)}>Delete</button>
+                    <button className="btn-sm btn-secondary" onClick={() => startEdit(room)}>Edit</button>
+                    {confirmDeleteId === room.id ? (
+                      <>
+                        <button className="btn-sm btn-danger" onClick={() => handleDelete(room.id)}>Confirm</button>
+                        <button className="btn-sm btn-secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                      </>
+                    ) : (
+                      <button className="btn-sm btn-danger" onClick={() => setConfirmDeleteId(room.id)}>Delete</button>
+                    )}
                   </div>
                 </div>
               )}

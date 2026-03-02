@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useToast } from './Toast';
 
 interface NotificationChannel {
   id: string;
@@ -40,6 +41,7 @@ export function NotificationManager() {
   const [formType, setFormType] = useState('telegram');
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  const toast = useToast();
 
   async function fetchChannels() {
     const res = await fetch(`${apiUrl}/api/notification-channels`);
@@ -84,12 +86,12 @@ export function NotificationManager() {
     try {
       const res = await fetch(`${apiUrl}/api/notification-channels/${id}/test`, { method: 'POST' });
       if (res.ok) {
-        alert('Test notification sent successfully!');
+        toast.success('Test notification sent successfully!');
       } else {
-        alert('Test notification failed.');
+        toast.error('Test notification failed.');
       }
     } catch {
-      alert('Test notification failed.');
+      toast.error('Test notification failed.');
     }
     setTesting(null);
   }
@@ -100,7 +102,7 @@ export function NotificationManager() {
     <div className="manager-page">
       <div className="manager-header">
         <h2>Notification Channels</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
+        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? 'Cancel' : '+ Add Channel'}
         </button>
       </div>
@@ -126,7 +128,7 @@ export function NotificationManager() {
               />
             </div>
           ))}
-          <button className="btn btn-primary" onClick={createChannel}>Save Channel</button>
+          <button className="btn-primary" onClick={createChannel}>Save Channel</button>
         </div>
       )}
 
@@ -154,13 +156,13 @@ export function NotificationManager() {
                   <span className="toggle-slider" />
                 </label>
                 <button
-                  className="btn btn-sm"
+                  className="btn-sm btn-secondary"
                   onClick={() => testChannel(ch.id)}
                   disabled={testing === ch.id}
                 >
                   {testing === ch.id ? 'Sending...' : 'Test'}
                 </button>
-                <button className="btn btn-sm btn-danger" onClick={() => deleteChannel(ch.id)}>Delete</button>
+                <button className="btn-sm btn-danger" onClick={() => deleteChannel(ch.id)}>Delete</button>
               </div>
             </div>
           </div>

@@ -18,6 +18,7 @@ export function PlantSpeciesManager() {
   const [editName, setEditName] = useState('');
   const [editRanges, setEditRanges] = useState<Record<string, string>>({});
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPlantSpecies = useCallback(async () => {
@@ -91,7 +92,7 @@ export function PlantSpeciesManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this plant species?')) return;
+    setConfirmDeleteId(null);
     setError(null);
     try {
       const res = await fetch(`${apiUrl}/api/plant-species/${id}`, { method: 'DELETE' });
@@ -191,8 +192,8 @@ export function PlantSpeciesManager() {
                   <input value={editName} onChange={(e) => setEditName(e.target.value)} className="name-edit" />
                   {renderRangeInputs(editRanges, setEditRanges)}
                   <div className="form-actions">
-                    <button className="btn-small btn-primary" onClick={() => handleEdit(ps.id)}>Save</button>
-                    <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button className="btn-sm btn-primary" onClick={() => handleEdit(ps.id)}>Save</button>
+                    <button className="btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -200,18 +201,25 @@ export function PlantSpeciesManager() {
                   <div className="plant-type-card-header">
                     <h3>{ps.name}</h3>
                     <div className="actions">
-                      <button className="btn-small btn-secondary" onClick={() => startEdit(ps)}>Edit</button>
-                      <button className="btn-small delete-btn" onClick={() => handleDelete(ps.id)}>Delete</button>
+                      <button className="btn-sm btn-secondary" onClick={() => startEdit(ps)}>Edit</button>
+                      {confirmDeleteId === ps.id ? (
+                        <>
+                          <button className="btn-sm btn-danger" onClick={() => handleDelete(ps.id)}>Confirm</button>
+                          <button className="btn-sm btn-secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn-sm delete-btn" onClick={() => setConfirmDeleteId(ps.id)}>Delete</button>
+                      )}
                     </div>
                   </div>
                   <div className="species-metrics">
                     {([
-                      { key: 'temp', label: 'Temp', scaleMin: 0, scaleMax: 50, color: '#ef4444' },
-                      { key: 'humidity', label: 'Humidity', scaleMin: 0, scaleMax: 100, color: '#60a5fa' },
-                      { key: 'moisture', label: 'Moisture', scaleMin: 0, scaleMax: 100, color: '#22c55e' },
-                      { key: 'pressure', label: 'Pressure', scaleMin: 900, scaleMax: 1100, color: '#c084fc' },
-                      { key: 'light', label: 'Light', scaleMin: 0, scaleMax: 100000, color: '#f59e0b' },
-                      { key: 'co2', label: 'CO2', scaleMin: 0, scaleMax: 2000, color: '#14b8a6' },
+                      { key: 'temp', label: 'Temp', scaleMin: 0, scaleMax: 50, color: 'var(--metric-temperature)' },
+                      { key: 'humidity', label: 'Humidity', scaleMin: 0, scaleMax: 100, color: 'var(--metric-humidity)' },
+                      { key: 'moisture', label: 'Moisture', scaleMin: 0, scaleMax: 100, color: 'var(--green-vivid)' },
+                      { key: 'pressure', label: 'Pressure', scaleMin: 900, scaleMax: 1100, color: 'var(--metric-pressure)' },
+                      { key: 'light', label: 'Light', scaleMin: 0, scaleMax: 100000, color: 'var(--metric-light)' },
+                      { key: 'co2', label: 'CO2', scaleMin: 0, scaleMax: 2000, color: 'var(--metric-moisture)' },
                     ] as const).map(m => {
                       const optMin = ps[`optimal_min_${m.key}` as keyof PlantSpecies] as number | null;
                       const optMax = ps[`optimal_max_${m.key}` as keyof PlantSpecies] as number | null;

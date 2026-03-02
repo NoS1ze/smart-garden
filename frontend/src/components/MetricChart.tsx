@@ -8,14 +8,14 @@ import { rawToPercent, timeAgo, getCalibration } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
 
-const METRIC_COLORS: Record<string, string> = {
-  soil_moisture: '#14b8a6',
-  temperature: '#f59e0b',
-  humidity: '#60a5fa',
-  pressure_hpa: '#c084fc',
-  co2_ppm: '#a78bfa',
-  tvoc_ppb: '#f472b6',
-  light_lux: '#eab308',
+const METRIC_COLOR_VARS: Record<string, { varName: string; fallback: string }> = {
+  soil_moisture: { varName: '--metric-moisture', fallback: '#14b8a6' },
+  temperature: { varName: '--metric-temperature', fallback: '#f59e0b' },
+  humidity: { varName: '--metric-humidity', fallback: '#60a5fa' },
+  pressure_hpa: { varName: '--metric-pressure', fallback: '#c084fc' },
+  co2_ppm: { varName: '--metric-co2', fallback: '#a78bfa' },
+  tvoc_ppb: { varName: '--metric-tvoc', fallback: '#f472b6' },
+  light_lux: { varName: '--metric-light', fallback: '#eab308' },
 };
 
 interface Props {
@@ -153,7 +153,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
   const chartData = readings.map((r) => ({
     time: new Date(r.recorded_at).getTime(),
     value: convertValue(r.value),
-  }));
+  })).filter(d => isFinite(d.value) && !isNaN(d.value));
 
   const getRefValues = (): number[] => {
     if (!plantSpecies) return [];
@@ -180,10 +180,11 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     const refValues = getRefValues();
     const allValues = [...dataValues, ...refValues];
     if (allValues.length === 0) return undefined;
-    const minVal = Math.min(...allValues);
-    const maxVal = Math.max(...allValues);
-    const padding = (maxVal - minVal) * 0.05 || 1;
-    return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)];
+    const sorted = [...allValues].sort((a, b) => a - b);
+    const p5 = sorted[Math.floor(sorted.length * 0.02)] ?? sorted[0];
+    const p95 = sorted[Math.floor(sorted.length * 0.98)] ?? sorted[sorted.length - 1];
+    const padding = (p95 - p5) * 0.05 || 1;
+    return [Math.floor(p5 - padding), Math.ceil(p95 + padding)];
   };
 
   const yDomain = computeYDomain();
@@ -216,7 +217,21 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
-  const metricColor = METRIC_COLORS[metric] || '#22c55e';
+  // Read theme-aware colors from CSS variables
+  const cssVar = (name: string, fallback: string) => {
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    } catch { return fallback; }
+  };
+
+  const mcv = METRIC_COLOR_VARS[metric];
+  const metricColor = mcv ? cssVar(mcv.varName, mcv.fallback) : cssVar('--green-vivid', '#22c55e');
+  const textMuted = cssVar('--text-muted', '#4b7a5a');
+  const bgSurface = cssVar('--bg-surface', 'rgba(14, 20, 16, 0.95)');
+  const bgBase = cssVar('--bg-base', '#080c0a');
+  const textPrimary = cssVar('--text-primary', '#f0fdf4');
+  const borderSubtle = cssVar('--border-subtle', 'rgba(255,255,255,0.08)');
+  const redAlert = cssVar('--red-alert', '#ef4444');
 
   const getSpeciesPrefix = () => {
     switch(metric) {
@@ -240,7 +255,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       const w = text.length * 6 + 10;
       return (
         <g>
-          <rect x={x - 3} y={y - 9} width={w} height={16} rx={3} fill="rgba(10,15,12,0.85)" />
+          <rect x={x - 3} y={y - 9} width={w} height={16} rx={3} fill={`${bgBase}d9`} />
           <text x={x} y={y + 3} fill={fill} fontSize={10} fontFamily="DM Sans, sans-serif">{text}</text>
         </g>
       );
@@ -258,12 +273,12 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     return (
       <>
         {optMin != null && optMax != null && (
-          <ReferenceArea y1={optMin} y2={optMax} fill={metricColor} fillOpacity={0.06} />
+          <ReferenceArea y1={optMin} y2={optMax} fill={metricColor} fillOpacity={0.04} />
         )}
-        {min != null && <ReferenceLine y={min} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.4}><Label content={refLabel('Min', '#ef4444')} /></ReferenceLine>}
-        {max != null && <ReferenceLine y={max} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.4}><Label content={refLabel('Max', '#ef4444')} /></ReferenceLine>}
-        {optMin != null && <ReferenceLine y={optMin} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5}><Label content={refLabel('Optimal', metricColor)} /></ReferenceLine>}
-        {optMax != null && <ReferenceLine y={optMax} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5} />}
+        {min != null && <ReferenceLine y={min} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.25}><Label content={refLabel('Min', redAlert)} /></ReferenceLine>}
+        {max != null && <ReferenceLine y={max} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.25}><Label content={refLabel('Max', redAlert)} /></ReferenceLine>}
+        {optMin != null && <ReferenceLine y={optMin} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.35}><Label content={refLabel('Optimal', metricColor)} /></ReferenceLine>}
+        {optMax != null && <ReferenceLine y={optMax} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.35} />}
       </>
     );
   };
@@ -277,7 +292,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
           <button
             key={m.key}
             className={metric === m.key ? 'tab active' : 'tab'}
-            style={metric === m.key ? { background: METRIC_COLORS[m.key] || '#22c55e' } : undefined}
+            style={metric === m.key ? { background: metricColor } : undefined}
             onClick={() => setMetric(m.key)}
           >
             {m.label}
@@ -330,12 +345,12 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
                 <stop offset="100%" stopColor={metricColor} stopOpacity={0.0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="0" stroke="rgba(255,255,255,0.04)" vertical={false} />
+            <CartesianGrid strokeDasharray="3 6" stroke={borderSubtle} vertical={false} />
             <XAxis
               dataKey="time"
               type="number"
               domain={['dataMin', 'dataMax']}
-              tick={{ fill: '#4b7a5a', fontSize: 11 }}
+              tick={{ fill: textMuted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               tickFormatter={formatXTick}
@@ -344,7 +359,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
               height={60}
             />
             <YAxis
-              tick={{ fill: '#4b7a5a', fontSize: 11 }}
+              tick={{ fill: textMuted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               width={35}
@@ -352,10 +367,10 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
             />
             <Tooltip
               contentStyle={{
-                background: 'rgba(14, 20, 16, 0.95)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '8px',
-                color: '#f0fdf4',
+                background: bgSurface,
+                border: `1px solid ${borderSubtle}`,
+                borderRadius: '12px',
+                color: textPrimary,
                 fontSize: '13px',
               }}
               labelFormatter={(ts) => new Date(ts as number).toLocaleString()}
@@ -380,10 +395,10 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
               type="monotone"
               dataKey="value"
               stroke={metricColor}
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill={`url(#chartGradient-${metric})`}
               dot={false}
-              activeDot={{ r: 5, fill: metricColor, stroke: '#080c0a', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: metricColor, stroke: bgBase, strokeWidth: 2 }}
               name={`${metricInfo.label} (${metricInfo.unit})`}
             />
           </AreaChart>

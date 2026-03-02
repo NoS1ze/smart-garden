@@ -32,8 +32,11 @@
   /* Effects */
   --shadow-glow: 0 0 40px rgba(34, 197, 94, 0.08);
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --radius-card: 12px;
-  --radius-sm: 8px;
+  --radius-card: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --section-gap: 16px;
 
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.08);
@@ -45,6 +48,15 @@
 
   /* Card shadow */
   --shadow-card-hover: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* Metric accent colors */
+  --metric-moisture: #14b8a6;
+  --metric-temperature: #f59e0b;
+  --metric-humidity: #60a5fa;
+  --metric-co2: #a78bfa;
+  --metric-tvoc: #f472b6;
+  --metric-pressure: #94a3b8;
+  --metric-light: #fbbf24;
 }
 
 :root[data-theme="light"] {
@@ -73,6 +85,10 @@
   --shadow-glow: 0 0 40px rgba(22, 163, 74, 0.04);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --radius-card: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 }
 
 /* ---- Reset ---- */
@@ -267,9 +283,8 @@ h1, h2, h3 {
 }
 
 .plant-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-glow), var(--shadow-card);
-  border-color: rgba(34, 197, 94, 0.2);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
 }
 
 .plant-card.attention {
@@ -352,7 +367,7 @@ h1, h2, h3 {
   height: 6px;
   border-radius: 100px;
   position: relative;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-glass-border);
   overflow: hidden;
 }
 
@@ -512,8 +527,7 @@ h1, h2, h3 {
 
 .btn-primary:hover {
   background: var(--green-soft);
-  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
-  transform: translateY(-1px);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.15);
 }
 
 .btn-primary:disabled {
@@ -537,8 +551,8 @@ h1, h2, h3 {
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--bg-glass-border);
+  border-color: var(--text-dim);
 }
 
 .btn-outline-green {
@@ -582,16 +596,12 @@ h1, h2, h3 {
   font-size: 1rem;
 }
 
-.btn-small {
-  padding: 5px 12px;
-  font-size: 12px;
-  border-radius: 6px;
-}
+/* btn-small consolidated into btn-sm */
 
 .btn-back {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted);
   font-size: 14px;
   cursor: pointer;
   margin-bottom: 20px;
@@ -602,7 +612,7 @@ h1, h2, h3 {
 }
 
 .btn-back:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   text-decoration: underline;
 }
 
@@ -755,11 +765,11 @@ h1, h2, h3 {
   border-right: 1px solid var(--bg-glass-border);
 }
 .source-btn.active {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-glass-border);
   color: var(--text-primary);
 }
 .source-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-glass);
 }
 
 .sensor-checklist {
@@ -816,11 +826,7 @@ h1, h2, h3 {
 
 /* ---- MetricChart ---- */
 .chart-section {
-  background: var(--bg-card);
-  border: 1px solid var(--bg-glass-border);
-  border-radius: var(--radius-card);
-  padding: 28px;
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .metric-chart {
@@ -851,12 +857,12 @@ h1, h2, h3 {
   font-family: 'DM Sans', sans-serif;
   font-size: 13px;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: var(--text-muted) !important;
 }
 
 .metric-unit {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .metric-timestamp {
@@ -884,7 +890,7 @@ h1, h2, h3 {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.7;
   transition: all 0.2s ease;
   cursor: pointer;
   border: none;
@@ -901,7 +907,7 @@ h1, h2, h3 {
 .tab.active,
 .time-btn.active {
   background: var(--green-vivid);
-  color: #080c0a;
+  color: var(--bg-base);
   opacity: 1;
 }
 
@@ -934,134 +940,145 @@ h1, h2, h3 {
   padding: 16px 0;
 }
 
+.text-muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .status.error {
   color: var(--red-alert);
 }
 
 /* ---- Plant Detail ---- */
 .plant-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
   padding-bottom: 64px;
 }
 
+.plant-detail-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .plant-detail-header {
-  display: grid;
-  grid-template-columns: 220px 1fr 280px;
-  gap: 32px;
-  align-items: start;
-  margin-bottom: 40px;
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
 }
 
 .plant-detail-photo {
-  width: 220px;
-  height: 220px;
+  width: 96px;
+  height: 96px;
   object-fit: cover;
   border-radius: var(--radius-card);
+  flex-shrink: 0;
 }
 
 .plant-detail-photo-placeholder {
-  width: 220px;
-  height: 220px;
-  background: #0d1a0d;
+  width: 96px;
+  height: 96px;
+  background: var(--bg-glass);
   border-radius: var(--radius-card);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
+  font-size: 36px;
+  flex-shrink: 0;
 }
 
 .plant-detail-info {
   min-width: 0;
+  flex: 1;
 }
 
-/* ---- Metrics Panel (right column) ---- */
-.metrics-panel {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+.plant-detail-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plant-detail-staleness {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ---- Section Card System ---- */
+.section-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
   border-radius: var(--radius-card);
-  padding: 16px 20px;
+  padding: 24px;
+}
+
+.section-heading {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+}
+
+/* ---- Metric Tiles Grid ---- */
+.metric-tiles-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.metric-tile {
+  background: var(--bg-surface);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 4px;
+  transition: border-color 0.2s;
 }
 
-.metrics-panel-badge {
-  font-size: 11px;
-  font-weight: 700;
-  padding-bottom: 10px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.metric-tile:hover {
+  border-color: var(--border-green);
 }
 
-.metrics-panel-badge.optimal { color: #4ade80; }
-.metrics-panel-badge.warning { color: #f59e0b; }
-.metrics-panel-badge.critical { color: #ef4444; }
+.metric-tile-icon { margin-bottom: 4px; }
 
-.metrics-panel-row {
-  display: flex;
-  align-items: start;
-  gap: 8px;
-  min-height: 28px;
-  margin-bottom: 6px;
-  padding-top: 2px;
+.metric-tile-value {
+  font-family: 'DM Serif Display', serif;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text-primary);
 }
 
-.metrics-panel-icon {
+.metric-tile-unit {
   font-size: 14px;
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
+  font-family: 'DM Sans', sans-serif;
+  opacity: 0.5;
+  margin-left: 2px;
 }
 
-.metrics-panel-label {
-  font-size: 10px;
+.metric-tile-label {
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.4);
-  flex-shrink: 0;
-  width: 68px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
 }
 
-.metrics-panel-bar {
-  flex: 1;
-  min-width: 0;
-  padding-top: 2px;
-}
-
-.metrics-panel-value {
-  flex-shrink: 0;
-  width: 48px;
-  text-align: right;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.metrics-panel-pill {
-  flex-shrink: 0;
-  width: 56px;
-  text-align: center;
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.metrics-panel-footer {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.metric-tile-status { font-size: 11px; font-weight: 500; margin-top: 2px; }
+.metric-tile-status.optimal { color: var(--green-soft); }
+.metric-tile-status.acceptable { color: var(--amber); }
+.metric-tile-status.critical { color: var(--red-alert); }
 
 .plant-detail-info h2 {
   font-size: 24px;
-  margin-bottom: 12px;
+  margin: 0;
   color: var(--text-primary);
 }
 
@@ -1084,17 +1101,20 @@ h1, h2, h3 {
 }
 
 .plant-detail-notes {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 14px;
-  margin-bottom: 12px;
-  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 8px 0 0;
   font-weight: 300;
   font-style: italic;
   padding-left: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .plant-detail-notes .quote-mark {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--text-dim);
   font-size: 1.2rem;
   font-style: normal;
   margin-right: 2px;
@@ -1106,23 +1126,6 @@ h1, h2, h3 {
 }
 
 /* ---- Detail Sections ---- */
-.detail-section {
-  margin-bottom: 40px;
-}
-
-.detail-section h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-secondary);
-  margin-bottom: 16px;
-  padding-left: 12px;
-  border-left: 2px solid var(--green-vivid);
-  border-bottom: none;
-  padding-bottom: 0;
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 600;
-}
 
 .detail-section h4 {
   font-size: 0.9rem;
@@ -1294,9 +1297,9 @@ h1, h2, h3 {
 
 .alerts-panel,
 .alert-history {
-  background: var(--bg-card);
+  background: var(--bg-surface);
   border: 1px solid var(--bg-glass-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-sm);
   padding: 20px;
 }
 
@@ -1315,8 +1318,8 @@ h1, h2, h3 {
 
 .panel-header button {
   background: transparent;
-  color: #4ade80;
-  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: var(--green-soft);
+  border: 1px solid var(--border-green);
   border-radius: var(--radius-sm);
   padding: 6px 14px;
   cursor: pointer;
@@ -1393,7 +1396,7 @@ h1, h2, h3 {
 .alerts-table td,
 .history-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--bg-glass);
   color: var(--text-secondary);
 }
 
@@ -1435,7 +1438,7 @@ h1, h2, h3 {
 }
 
 .sensor-tile:hover {
-  border-color: rgba(34, 197, 94, 0.2);
+  border-color: var(--border-green);
 }
 
 .sensor-tile::before {
@@ -1448,15 +1451,7 @@ h1, h2, h3 {
   background: radial-gradient(circle at top right, var(--green-glow), transparent 70%);
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--green-vivid);
-  box-shadow: 0 0 8px var(--green-vivid);
-  animation: pulse 2s ease-in-out infinite;
-  flex-shrink: 0;
-}
+/* .status-dot removed — staleness-dot handles sensor freshness */
 
 .sensor-card-header {
   display: flex;
@@ -1517,7 +1512,7 @@ h1, h2, h3 {
   font-size: 0.7rem;
   padding: 2px 6px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-glass);
   color: var(--text-dim);
 }
 
@@ -1533,13 +1528,21 @@ h1, h2, h3 {
   padding: 2px 6px;
   border-radius: 8px;
   background: rgba(96, 165, 250, 0.12);
-  color: #60a5fa;
+  color: var(--blue-data);
   cursor: default;
 }
 
 .sensor-actions {
   display: flex;
   gap: 8px;
+}
+
+.confirm-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .sensor-edit-form {
@@ -1636,7 +1639,7 @@ h1, h2, h3 {
 }
 
 .plant-type-card:hover {
-  border-color: rgba(34, 197, 94, 0.2);
+  border-color: var(--border-green);
 }
 
 .plant-type-card-header {
@@ -1800,7 +1803,7 @@ h1, h2, h3 {
 }
 
 .soil-card:hover {
-  border-color: rgba(34, 197, 94, 0.2);
+  border-color: var(--border-green);
 }
 
 .soil-header {
@@ -1894,7 +1897,7 @@ h1, h2, h3 {
 
 .soil-types-table td {
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--bg-glass);
   color: var(--text-secondary);
 }
 
@@ -1913,7 +1916,7 @@ h1, h2, h3 {
   border-color: var(--blue-data);
 }
 
-.soil-types-table td .btn-small {
+.soil-types-table td .btn-sm {
   margin-right: 4px;
 }
 
@@ -2006,17 +2009,17 @@ h1, h2, h3 {
 .detail-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 16px;
+  gap: 6px;
+  margin: 8px 0 0;
 }
 
 .detail-tag {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   background: var(--bg-glass);
   border: 1px solid var(--bg-glass-border);
   border-radius: 100px;
-  padding: 4px 12px;
+  padding: 3px 10px;
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -2031,13 +2034,13 @@ h1, h2, h3 {
 
 /* ---- Danger Zone ---- */
 .danger-zone {
-  margin-top: 48px;
+  margin-top: 16px;
   padding-top: 0;
 }
 
 .danger-divider {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-subtle);
   margin-bottom: 16px;
 }
 
@@ -2085,7 +2088,7 @@ h1, h2, h3 {
 }
 
 .reading-hero-card.with-divider {
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .reading-hero-value {
@@ -2112,7 +2115,7 @@ h1, h2, h3 {
   text-align: center;
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--bg-glass);
   font-size: 11px;
   color: var(--text-dim);
 }
@@ -2186,9 +2189,9 @@ h1, h2, h3 {
 
 /* ---- Edit Button ---- */
 .btn-edit {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
+  background: var(--bg-glass-border);
+  border: 1px solid var(--text-dim);
+  color: var(--text-primary);
   padding: 8px 20px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -2202,15 +2205,14 @@ h1, h2, h3 {
 }
 
 .btn-edit:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--text-dim);
 }
 
 /* ---- Chart Title ---- */
 .chart-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
   margin-bottom: 12px;
   font-family: 'DM Sans', sans-serif;
   font-weight: 500;
@@ -2229,9 +2231,9 @@ h1, h2, h3 {
 .link-sensor-btn {
   width: 100%;
   height: 44px;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border: 1px dashed var(--text-dim);
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
@@ -2274,7 +2276,7 @@ h1, h2, h3 {
 
 .empty-state-card .empty-subtext {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-dim);
   margin-top: 4px;
 }
 
@@ -2391,10 +2393,6 @@ h1, h2, h3 {
 
 /* ---- Watering Schedule ---- */
 .watering-schedule-card {
-  background: var(--bg-card);
-  border: 1px solid var(--bg-glass-border);
-  border-radius: var(--radius-card);
-  padding: 16px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2473,9 +2471,10 @@ h1, h2, h3 {
   border-color: var(--blue-data);
 }
 
-.btn-sm {
-  padding: 6px 14px !important;
-  font-size: 12px !important;
+button.btn-sm,
+label.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
 }
 
 /* ---- Watering Overdue Indicator (PlantCard) ---- */
@@ -2561,81 +2560,27 @@ h1, h2, h3 {
     grid-template-columns: 1fr;
   }
 
-  .plant-detail-header {
-    grid-template-columns: 160px 1fr;
+  .metric-tiles-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
   }
 
-  .plant-detail-photo,
-  .plant-detail-photo-placeholder {
-    width: 160px;
-    height: 160px;
-  }
+  .metric-tile { padding: 12px; }
 
-  .metrics-panel {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    justify-content: space-around;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
+  .section-card { padding: 16px; }
 
-  .metrics-panel-badge {
-    width: 100%;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    padding-bottom: 8px;
-    margin-bottom: 4px;
-  }
-
-  .metrics-panel-row {
-    flex: 1;
-    min-width: 120px;
-    flex-direction: column;
-    height: auto;
-    gap: 4px;
-    align-items: center;
-    text-align: center;
-  }
-
-  .metrics-panel-bar { display: none; }
-  .metrics-panel-label { width: auto; }
-  .metrics-panel-value { width: auto; }
-  .metrics-panel-pill { width: auto; }
-
-  .metrics-panel-footer {
-    width: 100%;
-    justify-content: center;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding-top: 8px;
-    margin-top: 4px;
+  .sidebar-footer {
+    display: none;
   }
 }
 
 @media (max-width: 600px) {
-  .plant-detail-header {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
-  }
-
   .plant-detail-photo,
   .plant-detail-photo-placeholder {
-    width: 180px;
-    height: 180px;
+    width: 72px;
+    height: 72px;
   }
-
-  .metrics-panel {
-    flex-direction: column;
-  }
-
-  .metrics-panel-row {
-    flex-direction: row;
-    min-width: 0;
-    height: 28px;
-    text-align: left;
-    align-items: center;
-  }
-
-  .metrics-panel-bar { display: block; }
+  .plant-detail-photo-placeholder { font-size: 30px; }
 }
 
 @media (max-width: 560px) {
@@ -2644,90 +2589,47 @@ h1, h2, h3 {
   }
 }
 
-/* ---- Trends ---- */
-.trends-section {
-  margin-top: 1.5rem;
+@media (max-width: 480px) {
+  .nav-item {
+    font-size: 0;
+    padding: 8px 10px;
+    gap: 0;
+  }
+  .nav-item .nav-icon {
+    font-size: initial;
+    width: 20px;
+    height: 20px;
+  }
+  .metric-tiles-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .plant-detail-name-row { flex-wrap: wrap; }
 }
-.trends-section h3 {
-  margin: 0 0 1rem;
-  font-size: 1rem;
-  color: var(--text-primary);
-}
-.trends-period-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-.trends-period-tab {
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-glass);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: all 0.2s;
-}
-.trends-period-tab.active {
-  background: var(--green-glow);
-  border-color: var(--green-vivid);
-  color: var(--green-vivid);
-}
-.trends-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0.75rem;
-}
-.trend-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 0.75rem;
-}
-.trend-card-loading {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  text-align: center;
-  padding: 1.5rem;
-}
-.trend-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 0.5rem;
-}
-.trend-card-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.trend-card-avg {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.trend-card-sparkline {
-  margin: 0 -0.25rem;
-}
-.trend-card-footer {
+
+/* ---- Metric Tile Trends ---- */
+.metric-tile-trend {
+  margin-top: 4px;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.35rem;
-  font-size: 0.75rem;
+  gap: 6px;
 }
-.trend-arrow {
-  font-weight: 700;
-  font-size: 0.9rem;
+
+.metric-tile-sparkline {
+  flex: 1;
+  min-width: 0;
 }
-.trend-change {
+
+.metric-tile-change {
+  font-size: 10px;
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.trend-period {
-  color: var(--text-dim);
-  margin-left: auto;
-}
+
+.metric-tile-change.up { color: var(--green-vivid); }
+.metric-tile-change.down { color: var(--red-alert); }
+.metric-tile-change.stable { color: var(--text-muted); }
+
 
 /* ---- Notification Channels ---- */
 .channel-type-badge {

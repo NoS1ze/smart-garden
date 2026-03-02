@@ -109,7 +109,7 @@ export function PhotoUpload({ currentUrl, onUrlChange }: Props) {
         />
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <label className="btn-small btn-secondary" style={{ cursor: 'pointer' }}>
+        <label className="btn-sm btn-secondary" style={{ cursor: 'pointer' }}>
           {uploading ? 'Uploading...' : preview ? 'Change Photo' : 'Upload Photo'}
           <input
             ref={fileRef}
@@ -121,7 +121,7 @@ export function PhotoUpload({ currentUrl, onUrlChange }: Props) {
           />
         </label>
         {preview && (
-          <button type="button" className="btn-small delete-btn" onClick={handleRemove}>
+          <button type="button" className="btn-sm delete-btn" onClick={handleRemove}>
             Remove
           </button>
         )}

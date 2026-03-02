@@ -26,6 +26,7 @@ interface Props {
   period: string;
   apiUrl: string;
   color?: string;
+  convertValue?: (raw: number) => number;
 }
 
 const TREND_ARROWS: Record<string, string> = {
@@ -40,7 +41,7 @@ const TREND_COLORS: Record<string, string> = {
   stable: 'var(--text-muted)',
 };
 
-export function TrendCard({ sensorId, metric, label, unit, period, apiUrl, color = '#4ade80' }: Props) {
+export function TrendCard({ sensorId, metric, label, unit, period, apiUrl, color = '#4ade80', convertValue }: Props) {
   const [data, setData] = useState<TrendData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,7 +63,24 @@ export function TrendCard({ sensorId, metric, label, unit, period, apiUrl, color
   }, [sensorId, metric, period, apiUrl]);
 
   if (loading) return <div className="trend-card trend-card-loading">Loading...</div>;
-  if (!data || data.points.length === 0) return null;
+  if (!data) return null;
+
+  // Filter corrupted data points and optionally convert values (e.g. raw soil → %)
+  const cv = convertValue || ((v: number) => v);
+  const cleanPoints = data.points
+    .filter(p => p.avg != null && isFinite(p.avg) && !isNaN(p.avg))
+    .map(p => ({ ...p, avg: cv(p.avg), min: cv(p.min), max: cv(p.max) }));
+  if (cleanPoints.length === 0) return null;
+  const cleanAvg = (data.current_avg != null && isFinite(data.current_avg)) ? cv(data.current_avg) : null;
+  // Recompute change_pct from converted values if converter provided
+  let cleanChange = (data.change_pct != null && isFinite(data.change_pct)) ? data.change_pct : null;
+  if (convertValue && data.current_avg != null && data.previous_avg != null && isFinite(data.previous_avg)) {
+    const curConv = cv(data.current_avg);
+    const prevConv = cv(data.previous_avg);
+    if (prevConv !== 0) {
+      cleanChange = Math.round(((curConv - prevConv) / Math.abs(prevConv)) * 1000) / 10;
+    }
+  }
 
   const trendColor = TREND_COLORS[data.trend] || TREND_COLORS.stable;
 
@@ -70,20 +88,22 @@ export function TrendCard({ sensorId, metric, label, unit, period, apiUrl, color
     <div className="trend-card">
       <div className="trend-card-header">
         <span className="trend-card-label">{label}</span>
-        <span className="trend-card-avg">
-          {data.current_avg.toFixed(metric === 'temperature' ? 1 : 0)}{unit}
-        </span>
+        {cleanAvg != null && (
+          <span className="trend-card-avg">
+            {cleanAvg.toFixed(metric === 'temperature' ? 1 : 0)}{unit}
+          </span>
+        )}
       </div>
       <div className="trend-card-sparkline">
-        <ResponsiveContainer width="100%" height={40}>
-          <AreaChart data={data.points}>
+        <ResponsiveContainer width="100%" height={52}>
+          <AreaChart data={cleanPoints}>
             <Area
-              type="monotone"
+              type="natural"
               dataKey="avg"
               stroke={color}
               fill={color}
-              fillOpacity={0.15}
-              strokeWidth={1.5}
+              fillOpacity={0.08}
+              strokeWidth={2.5}
               dot={false}
             />
           </AreaChart>
@@ -93,9 +113,9 @@ export function TrendCard({ sensorId, metric, label, unit, period, apiUrl, color
         <span className="trend-arrow" style={{ color: trendColor }}>
           {TREND_ARROWS[data.trend]}
         </span>
-        {data.change_pct != null && (
+        {cleanChange != null && (
           <span className="trend-change" style={{ color: trendColor }}>
-            {data.change_pct > 0 ? '+' : ''}{data.change_pct}%
+            {cleanChange > 0 ? '+' : ''}{cleanChange}%
           </span>
         )}
         <span className="trend-period">vs prev {period.replace('d', ' days')}</span>

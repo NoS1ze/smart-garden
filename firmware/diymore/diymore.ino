@@ -14,13 +14,15 @@
  *
  * ESP32                Capacitive Soil Moisture Sensor
  * ------               --------------------------------
- * GPIO32  -----------> AOUT (analog signal)
+ * GPIO32 or GPIO33 --> AOUT (analog signal, varies by board revision)
  * 3V3     -----------> VCC (hardwired on PCB)
  * GND     -----------> GND (hardwired on PCB)
  *
  * Note: Both sensors are hardwired to VCC — cannot be powered off via GPIO.
  *       The board uses a single 18650 battery in its built-in holder.
  *       USB chip: CH340 on /dev/cu.usbserial-0001
+ *       Soil pin varies: some revisions use GPIO32, others GPIO33.
+ *       Firmware auto-detects by reading both and picking the higher value.
  *
  * Deep Sleep:
  * Internal RTC timer wakeup — no external wiring needed.
@@ -54,11 +56,13 @@
 // Pin definitions
 #define DHT_PIN 22
 #define DHT_TYPE DHT11
-#define SOIL_ANALOG_PIN 32
+#define SOIL_PIN_A 32
+#define SOIL_PIN_B 33
 
 // Calibration reference (12-bit ADC: 0-4095)
 // ~3430 = dry (air), ~1360 = wet (submerged)
 // Frontend handles conversion via soil types (raw_dry_12bit / raw_wet_12bit)
+// Soil pin varies by board revision — auto-detected at boot
 
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 15000
@@ -86,7 +90,8 @@ void setup() {
 
   // Configure ADC: 12-bit resolution, 11dB attenuation (full 0-3.3V range)
   analogReadResolution(12);
-  analogSetPinAttenuation(SOIL_ANALOG_PIN, ADC_11db);
+  analogSetPinAttenuation(SOIL_PIN_A, ADC_11db);
+  analogSetPinAttenuation(SOIL_PIN_B, ADC_11db);
 
   // Initialize DHT sensor
   dht.begin();
@@ -123,14 +128,20 @@ void setup() {
 
   // --- Step 3: Read sensors ---
   // Soil moisture — raw 12-bit ADC value (0-4095)
-  // Take multiple samples for stability
-  int rawMoisture = 0;
+  // Auto-detect soil pin: some board revisions use GPIO32, others GPIO33
+  // Read both, use the one with a higher value (the other reads ~0 noise)
+  int sumA = 0, sumB = 0;
   for (int i = 0; i < 10; i++) {
-    rawMoisture += analogRead(SOIL_ANALOG_PIN);
+    sumA += analogRead(SOIL_PIN_A);
+    sumB += analogRead(SOIL_PIN_B);
     delay(10);
   }
-  rawMoisture /= 10;
-  Serial.printf("Soil - Raw ADC (avg of 10): %d\n", rawMoisture);
+  int avgA = sumA / 10;
+  int avgB = sumB / 10;
+  int rawMoisture = max(avgA, avgB);
+  int soilPin = (avgA >= avgB) ? SOIL_PIN_A : SOIL_PIN_B;
+  Serial.printf("Soil - GPIO%d: %d, GPIO%d: %d → using GPIO%d = %d\n",
+                SOIL_PIN_A, avgA, SOIL_PIN_B, avgB, soilPin, rawMoisture);
 
   // DHT11 — temperature (°C) and humidity (%)
   float temperature = dht.readTemperature();

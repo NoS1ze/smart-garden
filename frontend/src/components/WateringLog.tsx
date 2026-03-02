@@ -39,18 +39,18 @@ export function WateringLog({ plantId, apiUrl, onWateringLogged }: Props) {
     fetchEvents();
   }
 
-  if (loading) return <div className="loading-text">Loading watering history...</div>;
+  if (loading) return <div className="status">Loading watering history...</div>;
 
   return (
     <div className="watering-log">
       <div className="watering-log-header">
         <h3>Watering Log</h3>
-        <button className="btn-primary btn-small" onClick={logWatering}>
+        <button className="btn-primary btn-sm" onClick={logWatering}>
           Log Watering
         </button>
       </div>
       {events.length === 0 ? (
-        <p className="text-muted" style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No watering events recorded yet.</p>
+        <p className="text-muted">No watering events recorded yet.</p>
       ) : (
         <div className="watering-timeline">
           {events.map((e) => (

@@ -40,7 +40,8 @@ Web Dashboard reads from Supabase
 - Estimated 18650 runtime: ~10 days (dominated by regulator quiescent current)
 
 ### Board 2: DIY MORE ESP32 — "DIY MORE"
-Multiple DIY MORE boards exist with different ESP32 chip revisions but same pinout and firmware:
+Monolith prebuilt boards — soil moisture sensor + DHT11 hardwired on PCB.
+Multiple board revisions exist with different chip revisions and soil pin assignments:
 
 | Board | MAC | MCU | Chip Rev | USB |
 |-------|-----|-----|----------|-----|
@@ -59,7 +60,9 @@ Multiple DIY MORE boards exist with different ESP32 chip revisions but same pino
 
 **Sensors (hardwired to VCC on PCB — cannot be powered off via GPIO):**
 - DHT11: GPIO22 — temperature + humidity
-- Capacitive Soil Moisture: **GPIO32** (ADC1_CH4) — analog (NOT GPIO33 as some docs suggest)
+- Capacitive Soil Moisture: **GPIO32 or GPIO33** — varies by board revision
+  - 08:B6 (rev v1.0): GPIO33 | all others tested: GPIO32
+  - Firmware auto-detects by reading both pins, using the higher value
   - Raw calibration: ~3430 = dry (air), ~1360 = wet (submerged)
   - Tested across 3 boards: air range 3387-3457, water range 1276-1502
   - Firmware averages 10 samples with 10ms delay for stability
@@ -318,6 +321,10 @@ Table: `sensor_plant` (junction table)
 - Supabase client: use supabase-py library
 - Environment variables in .env — never hardcode secrets
 - Frontend reads directly from Supabase (using anon key) except for writes
+- Frontend uses CSS custom properties for all colors (dark/light theme support)
+- Frontend: use `cssVar(name, fallback)` helper for inline styles that need theme colors (e.g. Recharts)
+- Frontend: metric icons in `Icons.tsx` — use `<MetricIcon metric={key} size={n} />`, not inline SVGs
+- Frontend: delete actions use inline Confirm/Cancel buttons, never `confirm()` or `alert()`
 
 ## Multi-Agent Instructions
 - Always use TeamCreate for multi-step implementation tasks — parallelize independent work across teammates
@@ -367,6 +374,13 @@ VITE_API_URL=
 - [x] Firmware reflash: send raw ADC values instead of percentages
 - [x] Deployed to AWS Lightsail VPS (18.171.135.9) — nginx + systemd + uvicorn
 - [x] HTTPS support — DuckDNS + Let's Encrypt + certbot, firmware updated for WiFiClientSecure
+- [x] DIY MORE firmware: auto-detect soil pin (GPIO32 vs GPIO33) — reads both, uses higher value
+- [x] UI/UX overhaul (5 rounds) — minimalistic design, CSS variables for theming, metric icons, section-card layout
+- [x] Frontend: metric tiles with inline trend sparklines (replaced standalone Trends section)
+- [x] Frontend: ZonedGradientBar with single-hue opacity stages (replaced multi-color gradient)
+- [x] Frontend: inline confirm/cancel for all delete actions (replaced browser confirm() dialogs)
+- [x] Frontend: theme-aware charts and components (dark/light mode via CSS custom properties)
+- [x] Frontend: staleness thresholds adjusted to 75min/180min (covers 1hr sleep interval)
 - [ ] Google Home (future)
 
 ## Firmware Deployment

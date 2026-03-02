@@ -24,6 +24,7 @@ export function SoilTypeManager() {
   const [editDry12, setEditDry12] = useState('');
   const [editWet12, setEditWet12] = useState('');
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSoilTypes = useCallback(async () => {
@@ -102,7 +103,7 @@ export function SoilTypeManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this soil type? Plants using it will revert to default calibration.')) return;
+    setConfirmDeleteId(null);
     setError(null);
     try {
       const res = await fetch(`${apiUrl}/api/soil-types/${id}`, { method: 'DELETE' });
@@ -213,8 +214,8 @@ export function SoilTypeManager() {
                     </div>
                   </div>
                   <div className="form-actions">
-                    <button className="btn-small btn-primary" onClick={() => handleEdit(st.id)}>Save</button>
-                    <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button className="btn-sm btn-primary" onClick={() => handleEdit(st.id)}>Save</button>
+                    <button className="btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -222,8 +223,15 @@ export function SoilTypeManager() {
                   <div className="soil-header">
                     <h3>{st.name}</h3>
                     <div className="soil-actions">
-                      <button className="btn-small btn-secondary" onClick={() => startEdit(st)}>Edit</button>
-                      <button className="btn-small btn-danger" onClick={() => handleDelete(st.id)}>Delete</button>
+                      <button className="btn-sm btn-secondary" onClick={() => startEdit(st)}>Edit</button>
+                      {confirmDeleteId === st.id ? (
+                        <>
+                          <button className="btn-sm btn-danger" onClick={() => handleDelete(st.id)}>Confirm</button>
+                          <button className="btn-sm btn-secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn-sm btn-danger" onClick={() => setConfirmDeleteId(st.id)}>Delete</button>
+                      )}
                     </div>
                   </div>
                   <div className="calibration-bar">

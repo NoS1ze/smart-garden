@@ -28,6 +28,9 @@ export function SensorManager() {
   const [editLocation, setEditLocation] = useState('');
   const [editBoardTypeId, setEditBoardTypeId] = useState('');
 
+  // Delete confirmation state
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   const fetchBoardTypes = useCallback(async () => {
     try {
       const res = await fetch(`${apiUrl}/api/board-types`);
@@ -94,7 +97,7 @@ export function SensorManager() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this sensor? This will remove all associated readings!')) return;
+    setConfirmDeleteId(null);
     setError(null);
     try {
       const res = await fetch(`${apiUrl}/api/sensors/${id}`, { method: 'DELETE' });
@@ -159,8 +162,8 @@ export function SensorManager() {
                     </select>
                   </div>
                   <div className="form-actions">
-                    <button className="btn-small btn-primary" onClick={() => handleUpdate(s.id)}>Save</button>
-                    <button className="btn-small btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button className="btn-sm btn-primary" onClick={() => handleUpdate(s.id)}>Save</button>
+                    <button className="btn-sm btn-secondary" onClick={() => setEditingId(null)}>Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -170,7 +173,6 @@ export function SensorManager() {
                       <h3>{s.display_name || 'Unnamed Sensor'}</h3>
                       <code>{s.mac_address}</code>
                     </div>
-                    <span className="status-dot" />
                   </div>
                   <div className="sensor-details">
                     {s.board_type && (
@@ -205,8 +207,16 @@ export function SensorManager() {
                     <p className="sensor-date">Added {new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className="sensor-actions">
-                    <button className="btn-small btn-secondary" onClick={() => startEdit(s)}>Edit</button>
-                    <button className="btn-small btn-danger" onClick={() => handleDelete(s.id)}>Delete</button>
+                    <button className="btn-sm btn-secondary" onClick={() => startEdit(s)}>Edit</button>
+                    {confirmDeleteId === s.id ? (
+                      <span className="confirm-inline">
+                        <span>Delete sensor &amp; readings?</span>
+                        <button className="btn-sm btn-danger" onClick={() => handleDelete(s.id)}>Confirm</button>
+                        <button className="btn-sm btn-secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="btn-sm btn-danger" onClick={() => setConfirmDeleteId(s.id)}>Delete</button>
+                    )}
                   </div>
                 </>
               )}
