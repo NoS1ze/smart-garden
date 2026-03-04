@@ -2,8 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plant, Room } from '../types';
 import { PlantCard } from './PlantCard';
 import { AddPlantForm } from './AddPlantForm';
+import { MetricIcon } from './Icons';
+import { supabase } from '../lib/supabase';
 
 const apiUrl = import.meta.env.VITE_API_URL || '';
+
+const METRIC_UNITS: Record<string, { decimals: number; unit: string }> = {
+  temperature: { decimals: 1, unit: '°C' },
+  humidity: { decimals: 0, unit: '%' },
+  co2_ppm: { decimals: 0, unit: 'ppm' },
+  tvoc_ppb: { decimals: 0, unit: 'ppb' },
+};
+
+type RoomAggregates = Record<string, Record<string, number>>;
 
 interface Props {
   onSelectPlant: (plantId: string) => void;
@@ -15,6 +26,7 @@ export function PlantDashboard({ onSelectPlant }: Props) {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [roomAggregates, setRoomAggregates] = useState<RoomAggregates>({});
 
   const fetchPlants = useCallback(async () => {
     try {
@@ -43,6 +55,72 @@ export function PlantDashboard({ onSelectPlant }: Props) {
     const interval = setInterval(fetchPlants, 60000);
     return () => clearInterval(interval);
   }, [fetchPlants, fetchRooms]);
+
+  // Fetch room-level metric aggregates
+  useEffect(() => {
+    if (!plants.length || !rooms.length) return;
+
+    // Collect sensor IDs per room
+    const roomSensorMap: Record<string, string[]> = {};
+    const allSensorIds: string[] = [];
+    for (const room of rooms) {
+      const roomPlants = plants.filter((p) => p.room_id === room.id);
+      const sids = roomPlants.flatMap((p) => ((p as any).sensors || []).map((s: any) => s.id));
+      if (sids.length > 0) {
+        roomSensorMap[room.id] = sids;
+        allSensorIds.push(...sids);
+      }
+    }
+    if (allSensorIds.length === 0) return;
+
+    const unique = [...new Set(allSensorIds)];
+    supabase
+      .from('readings')
+      .select('sensor_id, metric, value, recorded_at')
+      .in('sensor_id', unique)
+      .order('recorded_at', { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (!data) return;
+        const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const aggs: RoomAggregates = {};
+
+        for (const [roomId, sids] of Object.entries(roomSensorMap)) {
+          // For each sensor, find latest reading per metric (fresh only)
+          const sensorLatest: Record<string, Record<string, number>> = {};
+          for (const row of data) {
+            if (!sids.includes(row.sensor_id)) continue;
+            if (row.recorded_at < cutoff) continue;
+            if (row.metric === 'soil_moisture') continue;
+            if (!(row.metric in METRIC_UNITS)) continue;
+            if (!sensorLatest[row.sensor_id]) sensorLatest[row.sensor_id] = {};
+            if (!(row.metric in sensorLatest[row.sensor_id])) {
+              sensorLatest[row.sensor_id][row.metric] = row.value;
+            }
+          }
+
+          // Average across sensors per metric
+          const metricSums: Record<string, { sum: number; count: number }> = {};
+          for (const metrics of Object.values(sensorLatest)) {
+            for (const [m, v] of Object.entries(metrics)) {
+              if (!metricSums[m]) metricSums[m] = { sum: 0, count: 0 };
+              metricSums[m].sum += v;
+              metricSums[m].count += 1;
+            }
+          }
+
+          const roomAvgs: Record<string, number> = {};
+          for (const [m, { sum, count }] of Object.entries(metricSums)) {
+            roomAvgs[m] = sum / count;
+          }
+          if (Object.keys(roomAvgs).length > 0) {
+            aggs[roomId] = roomAvgs;
+          }
+        }
+
+        setRoomAggregates(aggs);
+      });
+  }, [plants, rooms]);
 
   const toggleCollapse = (key: string) => {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -115,6 +193,20 @@ export function PlantDashboard({ onSelectPlant }: Props) {
                 <span className={`toggle-icon${collapsed[room.id] ? ' collapsed' : ''}`}>&#9662;</span>
                 <h3>{room.name}</h3>
                 <span className="room-section-count">{roomPlants.length}</span>
+                {roomAggregates[room.id] && (
+                  <div className="room-metric-chips" onClick={(e) => e.stopPropagation()}>
+                    {Object.entries(roomAggregates[room.id]).map(([metric, value]) => {
+                      const cfg = METRIC_UNITS[metric];
+                      if (!cfg) return null;
+                      return (
+                        <span key={metric} className="room-metric-chip">
+                          <MetricIcon metric={metric} size={14} />
+                          {value.toFixed(cfg.decimals)}{cfg.unit}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               {!collapsed[room.id] && (
                 <div className="plant-grid">

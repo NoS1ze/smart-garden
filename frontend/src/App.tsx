@@ -1,85 +1,172 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PlantDashboard } from './components/PlantDashboard';
 import { PlantDetail } from './components/PlantDetail';
 import { SoilTypeManager } from './components/SoilTypeManager';
 import { PlantSpeciesManager } from './components/PlantSpeciesManager';
 import { SensorManager } from './components/SensorManager';
+import { SensorDetail } from './components/SensorDetail';
 import { RoomManager } from './components/RoomManager';
 import { NotificationManager } from './components/NotificationManager';
 import { ToastProvider } from './components/Toast';
-import { DashboardIcon, LeafIcon, SoilIcon, SensorIcon, RoomIcon, BellIcon } from './components/Icons';
+import { DashboardIcon, LeafIcon, SoilIcon, SensorIcon, RoomIcon, BellIcon, SunIcon, MoonIcon } from './components/Icons';
 import { ThemeProvider, useTheme } from './lib/theme';
 import { AuthProvider, useAuth } from './lib/auth';
 import './App.css';
 
-type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors' | 'rooms' | 'notifications';
+type View = 'dashboard' | 'plant-detail' | 'soil-types' | 'plant-species' | 'sensors' | 'sensor-detail' | 'rooms' | 'notifications';
+
+function LoginPage({ authError, onSignIn, onClearError, theme, onToggleTheme }: {
+  authError: string | null;
+  onSignIn: (email: string, password: string) => void;
+  onClearError: () => void;
+  theme: string;
+  onToggleTheme: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberSession, setRememberSession] = useState(() => {
+    return localStorage.getItem('remember_session') !== 'false';
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onClearError();
+    localStorage.setItem('remember_session', String(rememberSession));
+    onSignIn(email, password);
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-logo">
+          <LeafIcon className="login-leaf-icon" />
+          <h1>Smart Garden</h1>
+        </div>
+        <p className="login-subtitle">Monitor your plants from anywhere</p>
+        {authError && (
+          <div className="login-error">{authError}</div>
+        )}
+        <form onSubmit={handleSubmit} className="login-form">
+          <input
+            type="email"
+            className="login-input"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+          <input
+            type="password"
+            className="login-input"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+          <label className="remember-session-label">
+            <input
+              type="checkbox"
+              checked={rememberSession}
+              onChange={e => setRememberSession(e.target.checked)}
+            />
+            Stay logged in for 30 days
+          </label>
+          <button type="submit" className="btn-primary">Sign In</button>
+        </form>
+        <button className="theme-toggle login-theme-toggle" onClick={onToggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+          {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function AppContent() {
   const [view, setView] = useState<View>('dashboard');
   const [selectedPlantId, setSelectedPlantId] = useState<string | null>(null);
+  const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null);
   const { theme, toggle } = useTheme();
-  const { user, loading, signInWithGoogle, signOut } = useAuth();
+  const { user, loading, authError, signInWithEmail, signOut, clearError } = useAuth();
+
+  // If "remember_session" is false, sign out when the browser tab closes
+  useEffect(() => {
+    if (!user) return;
+    const remember = localStorage.getItem('remember_session');
+    if (remember === 'false') {
+      sessionStorage.setItem('sg_session_active', '1');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const remember = localStorage.getItem('remember_session');
+    if (remember === 'false' && !sessionStorage.getItem('sg_session_active') && user) {
+      signOut();
+    }
+  }, []);
 
   if (loading) {
     return <div className="app-loading">Loading...</div>;
   }
 
+  if (!user) {
+    return <LoginPage authError={authError} onSignIn={signInWithEmail} onClearError={clearError} theme={theme} onToggleTheme={toggle} />;
+  }
+
+  const navItems: { view: View; icon: React.ReactNode; title: string }[] = [
+    { view: 'dashboard', icon: <DashboardIcon className="nav-icon" />, title: 'Dashboard' },
+    { view: 'plant-species', icon: <LeafIcon className="nav-icon" />, title: 'Species' },
+    { view: 'soil-types', icon: <SoilIcon className="nav-icon" />, title: 'Soil Types' },
+    { view: 'sensors', icon: <SensorIcon className="nav-icon" />, title: 'Sensors' },
+    { view: 'rooms', icon: <RoomIcon className="nav-icon" />, title: 'Rooms' },
+    { view: 'notifications', icon: <BellIcon className="nav-icon" />, title: 'Notifications' },
+  ];
+
+  const isActiveNav = (itemView: View) => {
+    if (itemView === 'dashboard' && (view === 'dashboard' || view === 'plant-detail')) return true;
+    if (itemView === 'sensors' && (view === 'sensors' || view === 'sensor-detail')) return true;
+    return view === itemView;
+  };
+
   return (
     <div className="app-container">
-      <nav className="sidebar">
-        <div className="sidebar-logo" onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
-          <span className="logo-text">Smart Garden</span>
-          <button className="theme-toggle" onClick={(e) => { e.stopPropagation(); toggle(); }} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-            {theme === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19'}
-          </button>
+      <nav className="topnav">
+        <div className="topnav-left" onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
+          <LeafIcon className="topnav-logo-icon" />
         </div>
-        <nav>
-          <div className={view === 'dashboard' || view === 'plant-detail' ? 'nav-item active' : 'nav-item'} onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
-            <DashboardIcon className="nav-icon" /> Dashboard
-          </div>
-          <div className={view === 'plant-species' ? 'nav-item active' : 'nav-item'} onClick={() => setView('plant-species')}>
-            <LeafIcon className="nav-icon" /> Species
-          </div>
-          <div className={view === 'soil-types' ? 'nav-item active' : 'nav-item'} onClick={() => setView('soil-types')}>
-            <SoilIcon className="nav-icon" /> Soil Types
-          </div>
-          <div className={view === 'sensors' ? 'nav-item active' : 'nav-item'} onClick={() => setView('sensors')}>
-            <SensorIcon className="nav-icon" /> Sensors
-          </div>
-          <div className={view === 'rooms' ? 'nav-item active' : 'nav-item'} onClick={() => setView('rooms')}>
-            <RoomIcon className="nav-icon" /> Rooms
-          </div>
-          <div className={view === 'notifications' ? 'nav-item active' : 'nav-item'} onClick={() => setView('notifications')}>
-            <BellIcon className="nav-icon" /> Notifications
-          </div>
-        </nav>
-        <div className="sidebar-footer">
-          {user ? (
-            <div className="user-info">
-              <img
-                className="user-avatar"
-                src={user.user_metadata?.avatar_url || ''}
-                alt=""
-                referrerPolicy="no-referrer"
-              />
-              <span className="user-email">{user.email}</span>
-              <button className="btn-secondary btn-sm" onClick={signOut}>Sign Out</button>
-            </div>
-          ) : (
-            <button className="btn-primary btn-sm" onClick={signInWithGoogle}>
-              Sign in with Google
+        <div className="topnav-centre">
+          {navItems.map(item => (
+            <button
+              key={item.view}
+              className={`topnav-icon-btn${isActiveNav(item.view) ? ' active' : ''}`}
+              title={item.title}
+              onClick={() => {
+                if (item.view === 'dashboard') setSelectedPlantId(null);
+                if (item.view === 'sensors') setSelectedSensorId(null);
+                setView(item.view);
+              }}
+            >
+              {item.icon}
             </button>
+          ))}
+        </div>
+        <div className="topnav-right">
+          <button className="topnav-icon-btn" onClick={toggle} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+            {theme === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+          </button>
+          {user && (
+            <img
+              className="user-avatar"
+              src={user.user_metadata?.avatar_url || ''}
+              alt=""
+              referrerPolicy="no-referrer"
+              title={`Sign out (${user.email})`}
+              onClick={signOut}
+            />
           )}
         </div>
       </nav>
 
-      <main className="content">
-        <header className="mobile-header">
-           <h1 onClick={() => { setView('dashboard'); setSelectedPlantId(null); }}>
-            Smart Garden
-          </h1>
-        </header>
-
+      <main className="page-content">
         {view === 'dashboard' && (
           <PlantDashboard
             onSelectPlant={(id) => {
@@ -108,7 +195,11 @@ function AppContent() {
         )}
 
         {view === 'sensors' && (
-          <SensorManager />
+          <SensorManager onSelectSensor={(id) => { setSelectedSensorId(id); setView('sensor-detail'); }} />
+        )}
+
+        {view === 'sensor-detail' && selectedSensorId && (
+          <SensorDetail sensorId={selectedSensorId} onBack={() => { setView('sensors'); setSelectedSensorId(null); }} />
         )}
 
         {view === 'rooms' && (

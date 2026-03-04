@@ -15,7 +15,11 @@ const METRIC_LABELS: Record<string, string> = {
   tvoc_ppb: 'TVOC',
 };
 
-export function SensorManager() {
+interface SensorManagerProps {
+  onSelectSensor?: (id: string) => void;
+}
+
+export function SensorManager({ onSelectSensor }: SensorManagerProps) {
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [boardTypes, setBoardTypes] = useState<BoardType[]>([]);
   const [sensorMetrics, setSensorMetrics] = useState<Record<string, string[]>>({});
@@ -133,7 +137,12 @@ export function SensorManager() {
           <p className="status">No sensors found. Power on an ESP8266 to auto-register.</p>
         ) : (
           sensors.map((s) => (
-            <div key={s.id} className="sensor-tile">
+            <div
+              key={s.id}
+              className="sensor-tile"
+              onClick={() => editingId !== s.id && onSelectSensor?.(s.id)}
+              style={{ cursor: editingId === s.id ? undefined : 'pointer' }}
+            >
               {editingId === s.id ? (
                 <div className="sensor-edit-form">
                   <div className="form-group">
@@ -206,7 +215,7 @@ export function SensorManager() {
                     })()}
                     <p className="sensor-date">Added {new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
-                  <div className="sensor-actions">
+                  <div className="sensor-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="btn-sm btn-secondary" onClick={() => startEdit(s)}>Edit</button>
                     {confirmDeleteId === s.id ? (
                       <span className="confirm-inline">

@@ -261,6 +261,26 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       );
     };
 
+  const getMinMax = () => {
+    if (!plantSpecies) return { min: null as number | null, max: null as number | null };
+    const prefix = getSpeciesPrefix();
+    return {
+      min: plantSpecies[`min_${prefix}` as keyof PlantSpecies] as number | null,
+      max: plantSpecies[`max_${prefix}` as keyof PlantSpecies] as number | null,
+    };
+  };
+
+  const renderOutOfRangeDot = (props: any): React.ReactElement<SVGElement> => {
+    const { min, max } = getMinMax();
+    const { cx, cy, payload } = props;
+    if (min == null && max == null) return <g />;
+    if (cx == null || cy == null || payload?.value == null) return <g />;
+    const v = payload.value;
+    const outOfRange = (min != null && v < min) || (max != null && v > max);
+    if (!outOfRange) return <g />;
+    return <circle cx={cx} cy={cy} r={4} fill={redAlert} stroke={bgBase} strokeWidth={1.5} />;
+  };
+
   const getReferenceLines = () => {
     if (!plantSpecies) return null;
     const prefix = getSpeciesPrefix();
@@ -273,12 +293,12 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     return (
       <>
         {optMin != null && optMax != null && (
-          <ReferenceArea y1={optMin} y2={optMax} fill={metricColor} fillOpacity={0.04} />
+          <ReferenceArea y1={optMin} y2={optMax} fill={metricColor} fillOpacity={0.07} />
         )}
-        {min != null && <ReferenceLine y={min} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.25}><Label content={refLabel('Min', redAlert)} /></ReferenceLine>}
-        {max != null && <ReferenceLine y={max} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.25}><Label content={refLabel('Max', redAlert)} /></ReferenceLine>}
-        {optMin != null && <ReferenceLine y={optMin} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.35}><Label content={refLabel('Optimal', metricColor)} /></ReferenceLine>}
-        {optMax != null && <ReferenceLine y={optMax} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.35} />}
+        {min != null && <ReferenceLine y={min} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5}><Label content={refLabel('Min', redAlert)} /></ReferenceLine>}
+        {max != null && <ReferenceLine y={max} stroke={redAlert} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5}><Label content={refLabel('Max', redAlert)} /></ReferenceLine>}
+        {optMin != null && <ReferenceLine y={optMin} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5}><Label content={refLabel('Optimal', metricColor)} /></ReferenceLine>}
+        {optMax != null && <ReferenceLine y={optMax} stroke={metricColor} strokeWidth={1} strokeDasharray="4 4" strokeOpacity={0.5} />}
       </>
     );
   };
@@ -397,7 +417,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
               stroke={metricColor}
               strokeWidth={2.5}
               fill={`url(#chartGradient-${metric})`}
-              dot={false}
+              dot={renderOutOfRangeDot}
               activeDot={{ r: 5, fill: metricColor, stroke: bgBase, strokeWidth: 2 }}
               name={`${metricInfo.label} (${metricInfo.unit})`}
             />

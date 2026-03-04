@@ -199,7 +199,18 @@ async def create_readings(request: Request, body: ReadingsCreate):
         adc_range = 400 if (body.adc_bits or 10) == 10 else 2600
         raw_drop = prev_soil_raw - soil_reading.value
         if raw_drop > adc_range * 0.2:  # >20% of ADC range
+            three_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
             for assoc in (plant_assocs.data or []):
+                recent = (
+                    supabase.table("watering_events")
+                    .select("id")
+                    .eq("plant_id", assoc["plant_id"])
+                    .gte("detected_at", three_hours_ago)
+                    .limit(1)
+                    .execute()
+                )
+                if recent.data:
+                    continue  # skip, already detected recently
                 supabase.table("watering_events").insert({
                     "plant_id": assoc["plant_id"],
                     "sensor_id": sensor_id,

@@ -411,10 +411,10 @@ VITE_API_URL=
 - Hold BOOT button while uploading if auto-reset doesn't work
 
 ## HTTPS Setup
-- **Domain**: DuckDNS subdomain (e.g., smartgarden.duckdns.org)
+- **Domain**: DuckDNS subdomain (e.g., nosizegarden.duckdns.org)
 - **SSL**: Let's Encrypt via certbot with nginx plugin
 - **Auto-renewal**: certbot.timer systemd service
-- **Deploy**: set `DOMAIN` env var before running deploy-server.sh (defaults to `smartgarden.duckdns.org`)
+- **Deploy**: set `DOMAIN` env var before running deploy-server.sh (defaults to `nosizegarden.duckdns.org`)
 - **DuckDNS cron**: set `DUCKDNS_TOKEN` env var to enable automatic IP updates every 5 min
 - **Firmware**: uses WiFiClientSecure with setInsecure() for HTTPS (skips cert validation — acceptable for IoT)
 - **ESP8266**: BearSSL::WiFiClientSecure (from WiFiClientSecureBearSSL.h)
@@ -431,8 +431,8 @@ VITE_API_URL=
 - **Server**: 18.171.135.9 (Ubuntu 22.04, eu-west-2)
 - **SSH**: `ssh -i ~/.ssh/lightsail-eu-west-2.pem ubuntu@18.171.135.9`
 - **Deploy script**: `./deploy-server.sh` (run from project root on Mac)
-- **HTTPS deploy**: `DOMAIN=smartgarden.duckdns.org ./deploy-server.sh` (certbot auto-provisions SSL)
-- **Frontend**: https://smartgarden.duckdns.org/ — nginx serves static build from `/opt/smart-garden/frontend/dist`
-- **Backend API**: https://smartgarden.duckdns.org/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
+- **HTTPS deploy**: `DOMAIN=nosizegarden.duckdns.org ./deploy-server.sh` (certbot auto-provisions SSL)
+- **Frontend**: https://nosizegarden.duckdns.org/ — nginx serves static build from `/opt/smart-garden/frontend/dist`
+- **Backend API**: https://nosizegarden.duckdns.org/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
 - **systemd service**: `smart-garden` — auto-restarts, env from `/opt/smart-garden/backend/.env`
 - **VITE_API_URL**: set automatically by deploy script to `https://$DOMAIN` (no `/api` suffix — code already prepends `/api/`)
