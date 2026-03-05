@@ -80,18 +80,18 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
   }, [sensorId, metric, range, customFrom, customTo]);
 
   const fetchAvailableMetrics = useCallback(async () => {
-    const { data } = await supabase
-      .from('readings')
-      .select('metric')
-      .eq('sensor_id', sensorId);
-
-    if (data) {
-      const metrics = new Set(data.map(d => d.metric as Metric));
-      if (metrics.size > 0) {
-        setAvailableMetrics(metrics);
-        if (!metrics.has(metric)) {
-          setMetric(Array.from(metrics)[0]);
-        }
+    const checks = await Promise.all(
+      METRICS.map(m =>
+        supabase.from('readings').select('metric').eq('sensor_id', sensorId).eq('metric', m.key).limit(1)
+      )
+    );
+    const metrics = new Set<Metric>(
+      checks.flatMap((r, i) => (r.data?.length ? [METRICS[i].key] : []))
+    );
+    if (metrics.size > 0) {
+      setAvailableMetrics(metrics);
+      if (!metrics.has(metric)) {
+        setMetric(Array.from(metrics)[0]);
       }
     }
   }, [sensorId, metric]);

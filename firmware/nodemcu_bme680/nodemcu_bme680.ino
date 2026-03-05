@@ -90,10 +90,12 @@ void setup() {
   Serial.printf("AHT21: %s\n", ahtReady ? "OK" : "FAILED");
 
   ens160.begin(&Wire, 0x52);
-  bool ensReady = ens160.init() && ens160.isConnected();
+  // Don't call init() on every wakeup — it resets the sensor's warm-up state.
+  // 3V3 stays on during deep sleep so the sensor retains calibration.
+  bool ensReady = ens160.isConnected();
   if (ensReady) {
     ens160.startStandardMeasure();
-    delay(1000); // ENS160 needs warmup time
+    delay(1100); // Wait one full 1s measurement cycle
   }
   Serial.printf("ENS160: %s\n", ensReady ? "OK" : "FAILED");
 
