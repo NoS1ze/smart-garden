@@ -35,6 +35,10 @@ export function SensorManager({ onSelectSensor }: SensorManagerProps) {
   // Delete confirmation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Battery change confirmation state
+  const [confirmBatteryId, setConfirmBatteryId] = useState<string | null>(null);
+  const [markingBatteryId, setMarkingBatteryId] = useState<string | null>(null);
+
   const fetchBoardTypes = useCallback(async () => {
     try {
       const res = await fetch(`${apiUrl}/api/board-types`);
@@ -98,6 +102,19 @@ export function SensorManager({ onSelectSensor }: SensorManagerProps) {
     } catch (e: any) {
       setError(e.message);
     }
+  };
+
+  const handleMarkBatteryChanged = async (id: string) => {
+    setMarkingBatteryId(id);
+    setConfirmBatteryId(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/sensors/${id}/battery`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to update battery timestamp');
+      fetchSensors();
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setMarkingBatteryId(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -213,10 +230,30 @@ export function SensorManager({ onSelectSensor }: SensorManagerProps) {
                         </p>
                       );
                     })()}
+                    {s.battery_changed_at ? (
+                      <p className="sensor-date">🔋 Battery changed {new Date(s.battery_changed_at).toLocaleDateString()}</p>
+                    ) : (
+                      <p className="sensor-date">🔋 Battery change not recorded</p>
+                    )}
                     <p className="sensor-date">Added {new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className="sensor-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="btn-sm btn-secondary" onClick={() => startEdit(s)}>Edit</button>
+                    {confirmBatteryId === s.id ? (
+                      <span className="confirm-inline">
+                        <span>Mark battery changed now?</span>
+                        <button
+                          className="btn-sm btn-primary"
+                          disabled={markingBatteryId === s.id}
+                          onClick={() => handleMarkBatteryChanged(s.id)}
+                        >
+                          {markingBatteryId === s.id ? '…' : 'Confirm'}
+                        </button>
+                        <button className="btn-sm btn-secondary" onClick={() => setConfirmBatteryId(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="btn-sm btn-secondary" onClick={() => setConfirmBatteryId(s.id)} title="Record battery change">🔋</button>
+                    )}
                     {confirmDeleteId === s.id ? (
                       <span className="confirm-inline">
                         <span>Delete sensor &amp; readings?</span>

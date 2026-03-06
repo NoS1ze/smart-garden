@@ -43,6 +43,8 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
   const [readings, setReadings] = useState<Reading[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -73,6 +75,19 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
     }
     fetchData();
   }, [sensorId]);
+
+  async function handleDeleteReading(id: string) {
+    setDeleting(id);
+    try {
+      const res = await fetch(`${apiUrl}/api/readings/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete reading');
+      setReadings((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // silently ignore — row stays in list
+    }
+    setDeleting(null);
+    setConfirmDeleteId(null);
+  }
 
   function formatDate(iso: string): string {
     const d = new Date(iso);
@@ -126,6 +141,12 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
               </span>
             </p>
           )}
+          <p className="sensor-date">
+            🔋 Battery changed:{' '}
+            {sensor.battery_changed_at
+              ? new Date(sensor.battery_changed_at).toLocaleString()
+              : 'not recorded'}
+          </p>
         </div>
       </div>
 
@@ -141,6 +162,7 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
                   <th>Date/Time</th>
                   <th>Metric</th>
                   <th>Value</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -152,6 +174,34 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
                       <span>{METRIC_LABELS[r.metric] || r.metric}</span>
                     </td>
                     <td>{formatValue(r.metric, r.value)}</td>
+                    <td className="reading-delete-cell">
+                      {confirmDeleteId === r.id ? (
+                        <span className="confirm-inline">
+                          <span>Delete?</span>
+                          <button
+                            className="btn-sm btn-danger"
+                            disabled={deleting === r.id}
+                            onClick={() => handleDeleteReading(r.id)}
+                          >
+                            {deleting === r.id ? '…' : 'Confirm'}
+                          </button>
+                          <button
+                            className="btn-sm btn-secondary"
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          className="reading-delete-btn"
+                          onClick={() => setConfirmDeleteId(r.id)}
+                          title="Delete reading"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

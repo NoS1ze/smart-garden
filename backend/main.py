@@ -269,6 +269,20 @@ async def list_readings(
 
 
 @limiter.limit("30/minute")
+@app.delete("/api/readings/{reading_id}", response_model=StatusResponse)
+async def delete_reading(request: Request, reading_id: UUID):
+    result = (
+        supabase.table("readings")
+        .delete()
+        .eq("id", str(reading_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Reading not found")
+    return StatusResponse()
+
+
+@limiter.limit("30/minute")
 @app.get("/api/readings/trends", response_model=TrendResponse)
 async def get_reading_trends(
     request: Request,
@@ -403,6 +417,20 @@ async def update_sensor(request: Request, sensor_id: UUID, body: SensorUpdate):
     result = (
         supabase.table("sensors")
         .update(updates)
+        .eq("id", str(sensor_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+    return _enrich_sensor(result.data[0])
+
+
+@limiter.limit("20/minute")
+@app.post("/api/sensors/{sensor_id}/battery", response_model=SensorOut)
+async def mark_battery_changed(request: Request, sensor_id: UUID):
+    result = (
+        supabase.table("sensors")
+        .update({"battery_changed_at": datetime.utcnow().isoformat()})
         .eq("id", str(sensor_id))
         .execute()
     )

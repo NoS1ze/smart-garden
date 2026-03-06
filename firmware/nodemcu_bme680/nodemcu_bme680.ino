@@ -142,10 +142,15 @@ void setup() {
 
   int eco2 = -1, tvoc = -1;
   if (ensReady) {
+    // Provide AHT21 temperature+humidity compensation for accurate eCO2/TVOC
+    if (temperature != -999 && humidity != -999) {
+      ens160.set_envdata(temperature, humidity);
+    }
     ens160.update();
     eco2 = ens160.getEco2();
     tvoc = ens160.getTvoc();
-    Serial.printf("ENS160 - eCO2: %d ppm, TVOC: %d ppb\n", eco2, tvoc);
+    uint8_t status = ens160.getAQIS();  // 0=init, 1=warm-up, 2=normal, 3=startup
+    Serial.printf("ENS160 - eCO2: %d ppm, TVOC: %d ppb, status: %d\n", eco2, tvoc, status);
   }
 
   // --- Step 4: Build JSON payload ---
@@ -173,13 +178,13 @@ void setup() {
     humReading["value"] = round(humidity * 10.0) / 10.0;
   }
 
-  // ENS160 readings
-  if (eco2 > 0) {
+  // ENS160 readings — send even during warm-up (eco2 >= 400, tvoc >= 0)
+  if (ensReady && eco2 > 0) {
     JsonObject co2Reading = readings.add<JsonObject>();
     co2Reading["metric"] = "co2_ppm";
     co2Reading["value"] = eco2;
   }
-  if (tvoc >= 0 && ensReady) {
+  if (ensReady && tvoc >= 0) {
     JsonObject tvocReading = readings.add<JsonObject>();
     tvocReading["metric"] = "tvoc_ppb";
     tvocReading["value"] = tvoc;

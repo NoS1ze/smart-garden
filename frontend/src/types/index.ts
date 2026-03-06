@@ -30,6 +30,7 @@ export interface Sensor {
   board_type_id: string | null;
   board_type: BoardType | null;
   last_seen_at: string | null;
+  battery_changed_at: string | null;
   created_at: string;
 }
 

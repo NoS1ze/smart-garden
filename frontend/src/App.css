@@ -2792,6 +2792,34 @@ label.btn-sm {
   background: var(--bg-glass);
 }
 
+.reading-delete-cell {
+  width: 1px;
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 8px;
+}
+
+.reading-delete-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.reading-delete-btn:hover {
+  color: var(--red-alert);
+  background: var(--bg-glass);
+}
+
+.readings-table tbody tr:hover .reading-delete-btn {
+  opacity: 1;
+}
+
 .metric-cell {
   display: flex;
   align-items: center;

@@ -381,6 +381,7 @@ VITE_API_URL=
 - [x] Frontend: inline confirm/cancel for all delete actions (replaced browser confirm() dialogs)
 - [x] Frontend: theme-aware charts and components (dark/light mode via CSS custom properties)
 - [x] Frontend: staleness thresholds adjusted to 75min/180min (covers 1hr sleep interval)
+- [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out)
 - [ ] Google Home (future)
 
 ## Firmware Deployment

@@ -71,6 +71,7 @@ class SensorOut(BaseModel):
     board_type_id: Optional[UUID] = None
     board_type: Optional["BoardTypeOut"] = None
     last_seen_at: Optional[datetime] = None
+    battery_changed_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -84,6 +85,7 @@ class SensorUpdate(BaseModel):
     location: Optional[str] = None
     sensor_type: Optional[str] = None
     board_type_id: Optional[UUID] = None
+    battery_changed_at: Optional[datetime] = None
 
 
 # ── Soil Types ────────────────────────────────────────────
