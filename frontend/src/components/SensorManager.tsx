@@ -235,6 +235,9 @@ export function SensorManager({ onSelectSensor }: SensorManagerProps) {
                     ) : (
                       <p className="sensor-date">🔋 Battery change not recorded</p>
                     )}
+                    {(s.raw_dry != null || s.raw_wet != null) && (
+                      <p className="sensor-date"><strong>Cal:</strong> dry={s.raw_dry}, wet={s.raw_wet}</p>
+                    )}
                     <p className="sensor-date">Added {new Date(s.created_at).toLocaleDateString()}</p>
                   </div>
                   <div className="sensor-actions" onClick={(e) => e.stopPropagation()}>

@@ -36,6 +36,8 @@ class ReadingsCreate(BaseModel):
     recorded_at: int = Field(..., description="Unix epoch seconds")
     adc_bits: Optional[int] = Field(None, description="ADC bit depth (10 or 12)")
     board_type: Optional[str] = Field(None, description="Board type slug")
+    raw_dry: Optional[int] = Field(None, description="Raw ADC value in air (dry calibration)")
+    raw_wet: Optional[int] = Field(None, description="Raw ADC value in water (wet calibration)")
 
 
 class ReadingsCreateResponse(BaseModel):
@@ -68,6 +70,8 @@ class SensorOut(BaseModel):
     location: str
     sensor_type: Optional[str] = None
     adc_bits: int = 10
+    raw_dry: Optional[int] = None
+    raw_wet: Optional[int] = None
     board_type_id: Optional[UUID] = None
     board_type: Optional["BoardTypeOut"] = None
     last_seen_at: Optional[datetime] = None

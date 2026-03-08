@@ -9,7 +9,12 @@ export function rawToPercent(raw: number, rawDry = 800, rawWet = 400): number {
 export function getCalibration(
   soilType: SoilType | null | undefined,
   adcBits: number = 10,
+  sensor?: { raw_dry: number | null; raw_wet: number | null } | null,
 ): { rawDry: number; rawWet: number } {
+  // Prefer sensor-level calibration if available (set by firmware)
+  if (sensor?.raw_dry != null && sensor?.raw_wet != null) {
+    return { rawDry: sensor.raw_dry, rawWet: sensor.raw_wet };
+  }
   if (!soilType) {
     return adcBits === 12 ? { rawDry: 3430, rawWet: 1360 } : { rawDry: 800, rawWet: 400 };
   }

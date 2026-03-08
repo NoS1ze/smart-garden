@@ -38,12 +38,16 @@ def _get_soil_calibration(sensor_id: str) -> tuple[int, int]:
     and the associated plant's soil type."""
     sensor_result = (
         supabase.table("sensors")
-        .select("adc_bits")
+        .select("adc_bits, raw_dry, raw_wet")
         .eq("id", sensor_id)
         .maybe_single()
         .execute()
     )
     adc_bits = sensor_result.data.get("adc_bits", 10) if sensor_result.data else 10
+
+    # Prefer sensor-level calibration if set by firmware
+    if sensor_result.data and sensor_result.data.get("raw_dry") is not None and sensor_result.data.get("raw_wet") is not None:
+        return sensor_result.data["raw_dry"], sensor_result.data["raw_wet"]
 
     # Default calibration based on ADC resolution
     raw_dry = 800 if adc_bits == 10 else 3430

@@ -3,26 +3,25 @@
  * Board: ESP32-D0WDQ6 (DIY MORE prebuilt board with 18650 holder)
  *
  * ============================================
- * WIRING (hardwired on PCB — no user wiring needed)
+ * WIRING (external sensors, powered via GPIO26)
  * ============================================
  *
  * ESP32                DHT11 (temperature + humidity)
  * ------               ----------------------------
  * GPIO22  -----------> DATA
- * 3V3     -----------> VCC (hardwired on PCB)
- * GND     -----------> GND (hardwired on PCB)
+ * GPIO26  -----------> VCC (power control, shared)
+ * GND     -----------> GND
  *
- * ESP32                Capacitive Soil Moisture Sensor
+ * ESP32                Capacitive Soil Moisture Sensor (external)
  * ------               --------------------------------
- * GPIO32 or GPIO33 --> AOUT (analog signal, varies by board revision)
- * 3V3     -----------> VCC (hardwired on PCB)
- * GND     -----------> GND (hardwired on PCB)
+ * GPIO32  -----------> AOUT (analog signal)
+ * GPIO26  -----------> VCC (power control, shared)
+ * GND     -----------> GND
  *
- * Note: Both sensors are hardwired to VCC — cannot be powered off via GPIO.
+ * Note: Sensors powered via GPIO26 — turned off during deep sleep.
  *       The board uses a single 18650 battery in its built-in holder.
  *       USB chip: CH340 on /dev/cu.usbserial-0001
- *       Soil pin varies: some revisions use GPIO32, others GPIO33.
- *       Firmware auto-detects by reading both and picking the higher value.
+ *       Soil pin auto-detected (GPIO32 vs GPIO33) for backward compat.
  *
  * Deep Sleep:
  * Internal RTC timer wakeup — no external wiring needed.
@@ -58,11 +57,7 @@
 #define DHT_TYPE DHT11
 #define SOIL_PIN_A 32
 #define SOIL_PIN_B 33
-
-// Calibration reference (12-bit ADC: 0-4095)
-// ~3430 = dry (air), ~1360 = wet (submerged)
-// Frontend handles conversion via soil types (raw_dry_12bit / raw_wet_12bit)
-// Soil pin varies by board revision — auto-detected at boot
+#define SENSOR_POWER_PIN 26
 
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 15000
@@ -77,6 +72,7 @@ DHT dht(DHT_PIN, DHT_TYPE);
 void goToSleep() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+  digitalWrite(SENSOR_POWER_PIN, LOW);  // ensure sensors off before sleep
   Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
   esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_SECONDS * 1000000ULL);
   esp_deep_sleep_start();
@@ -88,6 +84,10 @@ void setup() {
   Serial.println("Smart Garden - DIY MORE ESP32");
   Serial.println("=============================");
 
+  // Power on sensors via GPIO26
+  pinMode(SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(SENSOR_POWER_PIN, HIGH);
+
   // Configure ADC: 12-bit resolution, 11dB attenuation (full 0-3.3V range)
   analogReadResolution(12);
   analogSetPinAttenuation(SOIL_PIN_A, ADC_11db);
@@ -95,7 +95,7 @@ void setup() {
 
   // Initialize DHT sensor
   dht.begin();
-  // DHT11 needs ~1s to stabilize after power-on (always powered via VCC)
+  // DHT11 needs ~1s to stabilize after power-on
   delay(1000);
 
   // --- Step 1: Connect to WiFi ---
@@ -155,6 +155,8 @@ void setup() {
   doc["recorded_at"] = epochTime;
   doc["adc_bits"] = 12;
   doc["board_type"] = "diymore_dht11";
+  doc["raw_dry"] = RAW_DRY;
+  doc["raw_wet"] = RAW_WET;
 
   // Soil moisture — send raw ADC value (frontend converts via soil type calibration)
   JsonObject soilReading = readings.add<JsonObject>();
@@ -197,7 +199,8 @@ void setup() {
 
   http.end();
 
-  // --- Step 6: Sleep ---
+  // --- Step 6: Power off sensors and sleep ---
+  digitalWrite(SENSOR_POWER_PIN, LOW);
   goToSleep();
 }
 

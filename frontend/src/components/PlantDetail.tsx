@@ -460,7 +460,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
 
   // Convert raw values to display values
   const adcBits = sensors.length > 0 ? (sensors[0].adc_bits ?? 10) : 10;
-  const { rawDry, rawWet } = getCalibration(plant.soil_type, adcBits);
+  const { rawDry, rawWet } = getCalibration(plant.soil_type, adcBits, sensors[0]);
   const displayValues: Record<string, number> = {};
   for (const key of Object.keys(latestValues)) {
     displayValues[key] = key === 'soil_moisture'
@@ -682,7 +682,7 @@ export function PlantDetail({ plantId, onBack }: Props) {
           {sensors.map((s) => (
             <div key={s.id} className="chart-section">
               {!singleSensor && <h4>{s.display_name || s.location || 'Sensor'}</h4>}
-              <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantSpecies={plant?.plant_species} adcBits={s.adc_bits ?? 10} plantId={plantId} />
+              <MetricChart sensorId={s.id} soilType={plant?.soil_type} plantSpecies={plant?.plant_species} adcBits={s.adc_bits ?? 10} plantId={plantId} sensor={s} />
             </div>
           ))}
         </div>

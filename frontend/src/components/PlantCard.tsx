@@ -61,18 +61,22 @@ export function PlantCard({ plant, onClick }: Props) {
 
       if (sensorIds.length === 0) return;
 
-      // Determine ADC bit depth from sensor
+      // Determine ADC bit depth and calibration from sensor
       let adcBits = plant.sensors?.[0]?.adc_bits ?? 10;
+      let sensorCal: { raw_dry: number | null; raw_wet: number | null } | null = plant.sensors?.[0] ?? null;
       if (!plant.sensors?.length && sensorIds.length > 0) {
         const { data: sensorData } = await supabase
           .from('sensors')
-          .select('adc_bits')
+          .select('adc_bits, raw_dry, raw_wet')
           .in('id', sensorIds)
           .limit(1);
-        if (sensorData?.[0]) adcBits = sensorData[0].adc_bits ?? 10;
+        if (sensorData?.[0]) {
+          adcBits = sensorData[0].adc_bits ?? 10;
+          sensorCal = sensorData[0];
+        }
       }
 
-      const { rawDry, rawWet } = getCalibration(plant.soil_type, adcBits);
+      const { rawDry, rawWet } = getCalibration(plant.soil_type, adcBits, sensorCal);
 
       const { data: readings } = await supabase
         .from('readings')

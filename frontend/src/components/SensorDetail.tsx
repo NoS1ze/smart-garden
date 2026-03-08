@@ -147,6 +147,9 @@ export function SensorDetail({ sensorId, onBack }: SensorDetailProps) {
               ? new Date(sensor.battery_changed_at).toLocaleString()
               : 'not recorded'}
           </p>
+          {(sensor.raw_dry != null || sensor.raw_wet != null) && (
+            <p><strong>Calibration:</strong> dry={sensor.raw_dry}, wet={sensor.raw_wet} ({sensor.adc_bits}-bit)</p>
+          )}
         </div>
       </div>
 

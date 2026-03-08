@@ -27,6 +27,8 @@ export interface Sensor {
   location: string;
   sensor_type: string | null;
   adc_bits: number;
+  raw_dry: number | null;
+  raw_wet: number | null;
   board_type_id: string | null;
   board_type: BoardType | null;
   last_seen_at: string | null;

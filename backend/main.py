@@ -133,10 +133,14 @@ async def create_readings(request: Request, body: ReadingsCreate):
             raise HTTPException(status_code=500, detail="Failed to auto-register sensor")
         sensor_id = insert_result.data[0]["id"]
 
-    # Update sensor's adc_bits if provided
+    # Update sensor's adc_bits and calibration if provided
     sensor_updates: dict = {}
     if body.adc_bits is not None and body.adc_bits in (10, 12):
         sensor_updates["adc_bits"] = body.adc_bits
+    if body.raw_dry is not None:
+        sensor_updates["raw_dry"] = body.raw_dry
+    if body.raw_wet is not None:
+        sensor_updates["raw_wet"] = body.raw_wet
 
     # Link sensor to board type if slug provided
     if body.board_type:

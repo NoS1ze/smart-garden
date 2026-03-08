@@ -3,7 +3,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label
 } from 'recharts';
 import { supabase } from '../lib/supabase';
-import { Reading, Metric, METRICS, SoilType, PlantSpecies, WateringEvent } from '../types';
+import { Reading, Metric, METRICS, Sensor, SoilType, PlantSpecies, WateringEvent } from '../types';
 import { rawToPercent, timeAgo, getCalibration } from '../lib/calibration';
 
 type Range = '24h' | '7d' | '30d' | 'custom';
@@ -24,9 +24,10 @@ interface Props {
   plantSpecies?: PlantSpecies | null;
   adcBits?: number;
   plantId?: string;
+  sensor?: Sensor | null;
 }
 
-export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, plantId }: Props) {
+export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, plantId, sensor }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
   const [range, setRange] = useState<Range>('24h');
@@ -144,7 +145,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     return () => clearInterval(interval);
   }, [fetchReadings, fetchLatest, fetchWateringEvents]);
 
-  const { rawDry, rawWet } = getCalibration(soilType, adcBits);
+  const { rawDry, rawWet } = getCalibration(soilType, adcBits, sensor);
   const convertValue = (v: number) =>
     metric === 'soil_moisture'
       ? rawToPercent(v, rawDry, rawWet)
