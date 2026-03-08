@@ -9,7 +9,7 @@ set -euo pipefail
 DOMAIN="${DOMAIN:-smartgarden.duckdns.org}"
 
 VPS="ubuntu@18.171.135.9"
-KEY="$HOME/.ssh/LightsailDefaultKey-eu-west-2.pem"
+KEY="$HOME/.ssh/lightsail-eu-west-2.pem"
 SSH="ssh -i $KEY $VPS"
 SCP="scp -i $KEY"
 
