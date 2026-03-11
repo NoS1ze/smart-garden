@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label
 } from 'recharts';
@@ -41,8 +41,10 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
 
   const apiUrl = import.meta.env.VITE_API_URL || '';
   const metricInfo = METRICS.find((m) => m.key === metric)!;
+  const fetchSeqRef = useRef(0);
 
   const fetchReadings = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
 
@@ -72,6 +74,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       .order('recorded_at', { ascending: true })
       .limit(1000);
 
+    if (fetchSeqRef.current !== seq) return; // stale — metric or range changed while fetching
     if (err) {
       setError(err.message);
     } else {

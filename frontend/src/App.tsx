@@ -183,6 +183,9 @@ function AppContent() {
               setView('dashboard');
               setSelectedPlantId(null);
             }}
+            onNavigateSoilTypes={() => setView('soil-types')}
+            onNavigatePlantSpecies={() => setView('plant-species')}
+            onNavigateSensor={(id) => { setSelectedSensorId(id); setView('sensor-detail'); }}
           />
         )}
 

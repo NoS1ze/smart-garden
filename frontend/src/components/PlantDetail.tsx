@@ -15,6 +15,9 @@ import { useToast } from './Toast';
 interface Props {
   plantId: string;
   onBack: () => void;
+  onNavigateSoilTypes?: () => void;
+  onNavigatePlantSpecies?: () => void;
+  onNavigateSensor?: (sensorId: string) => void;
 }
 
 const DETAIL_METRICS = [
@@ -141,7 +144,7 @@ function MetricTile({ metricKey, label, unit, value, ranges, status, panelStale,
   );
 }
 
-export function PlantDetail({ plantId, onBack }: Props) {
+export function PlantDetail({ plantId, onBack, onNavigateSoilTypes, onNavigatePlantSpecies, onNavigateSensor }: Props) {
   const [plant, setPlant] = useState<Plant | null>(null);
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [soilTypes, setSoilTypes] = useState<SoilType[]>([]);
@@ -470,15 +473,16 @@ export function PlantDetail({ plantId, onBack }: Props) {
   const availableMetrics = DETAIL_METRICS.filter((m) => displayValues[m.key] !== undefined);
 
   // Info tags for compact display
-  const tags: { label: string; value: string; color?: string }[] = [];
-  if (plant.plant_species) tags.push({ label: 'Species', value: plant.plant_species.name });
+  const tags: { label: string; value: string; color?: string; onClick?: () => void }[] = [];
+  if (plant.plant_species) tags.push({ label: 'Species', value: plant.plant_species.name, onClick: onNavigatePlantSpecies });
   if (plant.room) tags.push({ label: 'Room', value: plant.room.name });
-  if (plant.soil_type) tags.push({ label: 'Soil', value: plant.soil_type.name, color: 'var(--green-vivid)' });
+  if (plant.soil_type) tags.push({ label: 'Soil', value: plant.soil_type.name, color: 'var(--green-vivid)', onClick: onNavigateSoilTypes });
   if (plant.planted_date) tags.push({ label: 'Planted', value: new Date(plant.planted_date).toLocaleDateString() });
   if (referencePlant) tags.push({ label: 'Ambient from', value: referencePlant.name, color: 'var(--blue-data)' });
   if (sensors.length > 0) {
     const sensorLabel = sensors.map(s => s.display_name || s.location || 'Sensor').join(', ');
-    tags.push({ label: usingReference ? 'Ref sensor' : 'Sensor', value: sensorLabel, color: 'var(--teal)' });
+    const firstSensorId = sensors[0].id;
+    tags.push({ label: usingReference ? 'Ref sensor' : 'Board', value: sensorLabel, color: 'var(--teal)', onClick: onNavigateSensor ? () => onNavigateSensor(firstSensorId) : undefined });
   }
 
   return (
@@ -628,7 +632,11 @@ export function PlantDetail({ plantId, onBack }: Props) {
             </div>
             {tags.length > 0 && (
               <div className="detail-tags">
-                {tags.map((t) => (
+                {tags.map((t) => t.onClick ? (
+                  <button key={t.label} className="detail-tag detail-tag-link" style={t.color ? { color: t.color } : undefined} onClick={t.onClick}>
+                    <span className="detail-tag-label">{t.label}</span> {t.value}
+                  </button>
+                ) : (
                   <span key={t.label} className="detail-tag" style={t.color ? { color: t.color } : undefined}>
                     <span className="detail-tag-label">{t.label}</span> {t.value}
                   </span>
