@@ -64,6 +64,11 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       from = new Date(now - ms).toISOString();
     }
 
+    // Use a range-appropriate limit and fetch newest-first so we always get
+    // the most recent data (not the oldest) when there are many readings.
+    const LIMITS: Record<Range, number> = { '24h': 500, '7d': 2016, '30d': 5000, 'custom': 2000 };
+    const limit = LIMITS[range];
+
     const { data, error: err } = await supabase
       .from('readings')
       .select('*')
@@ -71,14 +76,14 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       .eq('metric', metric)
       .gte('recorded_at', from)
       .lte('recorded_at', to)
-      .order('recorded_at', { ascending: true })
-      .limit(1000);
+      .order('recorded_at', { ascending: false })
+      .limit(limit);
 
     if (fetchSeqRef.current !== seq) return; // stale — metric or range changed while fetching
     if (err) {
       setError(err.message);
     } else {
-      setReadings(data ?? []);
+      setReadings((data ?? []).reverse()); // reverse back to chronological order for the chart
     }
     setLoading(false);
   }, [sensorId, metric, range, customFrom, customTo]);
@@ -182,13 +187,25 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
   const computeYDomain = (): [number, number] | undefined => {
     const dataValues = chartData.map(d => d.value);
     const refValues = getRefValues();
-    const allValues = [...dataValues, ...refValues];
-    if (allValues.length === 0) return undefined;
-    const sorted = [...allValues].sort((a, b) => a - b);
-    const p5 = sorted[Math.floor(sorted.length * 0.02)] ?? sorted[0];
-    const p95 = sorted[Math.floor(sorted.length * 0.98)] ?? sorted[sorted.length - 1];
-    const padding = (p95 - p5) * 0.05 || 1;
-    return [Math.floor(p5 - padding), Math.ceil(p95 + padding)];
+    if (dataValues.length === 0 && refValues.length === 0) return undefined;
+
+    // Clip data outliers with percentiles, but NEVER clip reference lines
+    let dataMin: number, dataMax: number;
+    if (dataValues.length === 0) {
+      dataMin = Math.min(...refValues);
+      dataMax = Math.max(...refValues);
+    } else {
+      const sorted = [...dataValues].sort((a, b) => a - b);
+      dataMin = sorted[Math.floor(sorted.length * 0.02)] ?? sorted[0];
+      dataMax = sorted[Math.floor(sorted.length * 0.98)] ?? sorted[sorted.length - 1];
+    }
+
+    // Expand to always include all reference line positions
+    const allBounds = [dataMin, dataMax, ...refValues];
+    const lo = Math.min(...allBounds);
+    const hi = Math.max(...allBounds);
+    const padding = (hi - lo) * 0.08 || 1;
+    return [Math.floor(lo - padding), Math.ceil(hi + padding)];
   };
 
   const yDomain = computeYDomain();
