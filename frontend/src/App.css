@@ -2025,13 +2025,23 @@ h1, h2, h3 {
 
 .detail-tag-link {
   cursor: pointer;
-  background: none;
+  font-size: 11px;
+  font-family: inherit;
+  color: inherit;
+  background: var(--bg-glass);
   border: 1px solid var(--bg-glass-border);
+  border-radius: 100px;
+  padding: 3px 10px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   transition: border-color 0.15s, opacity 0.15s;
+  text-decoration: none;
 }
 .detail-tag-link:hover {
   border-color: currentColor;
-  opacity: 0.85;
+  opacity: 0.8;
+  text-decoration: underline;
 }
 
 .detail-tag-label {
