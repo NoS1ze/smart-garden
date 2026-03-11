@@ -124,7 +124,7 @@ export function PlantCard({ plant, onClick }: Props) {
       if (!useReference) {
         const { data: alerts } = await supabase
           .from('alerts')
-          .select('id')
+          .select('id, metric, condition, threshold')
           .in('sensor_id', sensorIds)
           .eq('active', true);
 
@@ -133,13 +133,20 @@ export function PlantCard({ plant, onClick }: Props) {
           const since = new Date(Date.now() - 86400000).toISOString();
           const { data: recentTriggers } = await supabase
             .from('alert_history')
-            .select('id')
+            .select('alert_id')
             .in('alert_id', alertIds)
-            .gte('triggered_at', since)
-            .limit(1);
+            .gte('triggered_at', since);
 
           if (recentTriggers && recentTriggers.length > 0) {
-            setNeedsAttention(true);
+            const triggeredIds = new Set(recentTriggers.map((t: { alert_id: string }) => t.alert_id));
+            // Only show dot if the condition is currently still violated
+            const stillActive = alerts.some((a: { id: string; metric: string; condition: string; threshold: number }) => {
+              if (!triggeredIds.has(a.id)) return false;
+              const current = values[a.metric];
+              if (current === undefined) return false;
+              return a.condition === 'above' ? current > a.threshold : current < a.threshold;
+            });
+            if (stillActive) setNeedsAttention(true);
           }
         }
       }
