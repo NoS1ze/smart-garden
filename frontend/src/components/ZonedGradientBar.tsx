@@ -78,16 +78,24 @@ export function ZonedGradientBar({ value, min, optMin, optMax, max, isStale, acc
 
   const pct = (v: number) => `${((v / overflow) * 100).toFixed(1)}%`;
 
+  const amber = cssVar('--amber', '#f59e0b');
+  const red = cssVar('--red-alert', '#ef4444');
+
+  // Use zone-correct colors so the bar matches the card/tile status color:
+  // transparent → red (critical) → amber (acceptable) → accent (optimal) → amber → red → transparent
   const gradientStops = [
     `transparent ${pct(0)}`,
-    `transparent ${pct(_min)}`,
-    `${accent}33 ${pct(_min)}`,
-    `${accent}66 ${pct(_optMin)}`,
-    `${accent}73 ${pct((_optMin + _optMax) / 2)}`,
-    `${accent}66 ${pct(_optMax)}`,
-    `${accent}33 ${pct(_max)}`,
-    `transparent ${pct(_max)}`,
-    `transparent 100%`,
+    `${red}44 ${pct(0)}`,
+    `${red}44 ${pct(_min)}`,          // critical zone: dim red
+    `${amber}66 ${pct(_min)}`,        // hard edge: acceptable low starts (amber)
+    `${amber}99 ${pct(_optMin)}`,     // acceptable low: full amber at boundary
+    `${accent}99 ${pct(_optMin)}`,    // hard edge: optimal zone starts (accent)
+    `${accent}cc ${pct((_optMin + _optMax) / 2)}`,
+    `${accent}99 ${pct(_optMax)}`,    // optimal zone ends
+    `${amber}99 ${pct(_optMax)}`,     // hard edge: acceptable high starts (amber)
+    `${amber}66 ${pct(_max)}`,        // acceptable high: dims toward max
+    `${red}44 ${pct(_max)}`,          // hard edge: critical high starts (red)
+    `${red}44 100%`,
   ];
 
   const trackBg = cssVar('--bg-glass-border', 'rgba(255,255,255,0.08)');
