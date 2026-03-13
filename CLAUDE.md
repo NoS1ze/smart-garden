@@ -75,6 +75,7 @@ Multiple board revisions exist with different chip revisions and soil pin assign
 - DHT11 + soil sensor powered via GPIO26 (SENSOR_POWER_PIN), turned off during deep sleep
 - BH1750 powered via GPIO14 (LIGHT_POWER_PIN), turned off during deep sleep
 - Boards with chopped onboard soil sensor: residual PCB components on GPIO32/33 attenuate signal — use external sensor on GPIO35
+- **GPIO12 is a strapping pin** (sets ESP32 flash voltage) — do NOT use as sensor power output; affects ADC readings
 - Estimated 18650 runtime: ~30-35 days (1hr interval)
 
 ### Board 3: NodeMCU V3 (ESP8266) + ENS160/AHT21 — "NodeMCU ENS160"
@@ -389,8 +390,10 @@ VITE_API_URL=
 - [x] DIY MORE firmware: BH1750 light sensor support (I2C on GPIO25/27, power GPIO14)
 - [x] DIY MORE firmware: SOIL_PIN config.h override for boards with chopped onboard sensor
 - [x] Frontend: light_lux metric fully supported (tiles, charts, dashboard aggregates, icons)
+- [x] DIY MORE #1, #3, #4: BH1750 confirmed working after resoldering GPIO25 (SDA) / GPIO27 (SCL)
+- [x] Firmware: `firmware/diymore_test/` test sketch for hardware debugging (no WiFi/sleep, loops all sensors every 2s)
 - [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out)
-- [ ] DIY MORE #2 (BC:3B:BC): soil power pin — GPIO26 works but shared with DHT11+BH1750, needs dedicated pin (GPIO14/12/33 all failed to source enough current)
+- [ ] DIY MORE #2 (BC:3B:BC): soil reads ~650 in air (should be ~3430) — confirmed PCB trace defect on GPIO32, not a power issue; fix is external sensor on GPIO35 with `SOIL_PIN 35` in config.h
 - [ ] Google Home (future)
 
 ## Firmware Deployment
