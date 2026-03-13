@@ -7,3 +7,4 @@
 #define SLEEP_SECONDS 3600                     // 1 hour between readings
 #define RAW_DRY 2694                           // raw ADC in air (calibrate per board)
 #define RAW_WET 1360                           // raw ADC in water (calibrate per board)
+// #define SOIL_PIN 35                         // uncomment to force a specific soil ADC pin (e.g. GPIO35 for boards with chopped onboard sensor)

@@ -58,18 +58,24 @@ Multiple board revisions exist with different chip revisions and soil pin assign
 - **Deep sleep**: Internal RTC timer (no external wiring)
 - **Battery**: Built-in 18650 holder
 
-**Sensors (hardwired to VCC on PCB — cannot be powered off via GPIO):**
-- DHT11: GPIO22 — temperature + humidity
+**Sensors:**
+- DHT11: GPIO22 — temperature + humidity (powered via GPIO26)
 - Capacitive Soil Moisture: **GPIO32 or GPIO33** — varies by board revision
   - 08:B6 (rev v1.0): GPIO33 | all others tested: GPIO32
   - Firmware auto-detects by reading both pins, using the higher value
+  - Boards with chopped onboard sensor: use `SOIL_PIN` in config.h to override (e.g. GPIO35)
   - Raw calibration: ~3430 = dry (air), ~1360 = wet (submerged)
   - Tested across 3 boards: air range 3387-3457, water range 1276-1502
   - Firmware averages 10 samples with 10ms delay for stability
+- BH1750 (GY-302): I2C on GPIO25 (SDA) / GPIO27 (SCL), address 0x23 — light level (lux)
+  - Powered via GPIO14 (LIGHT_POWER_PIN)
+  - Firmware tries 0x23 then 0x5C, uses ONE_TIME_HIGH_RES_MODE with 200ms delay
 
 **Power notes:**
-- Sensors always on (~3mA constant drain during deep sleep)
-- Estimated 18650 runtime: ~30-35 days (1hr interval, sensors always powered)
+- DHT11 + soil sensor powered via GPIO26 (SENSOR_POWER_PIN), turned off during deep sleep
+- BH1750 powered via GPIO14 (LIGHT_POWER_PIN), turned off during deep sleep
+- Boards with chopped onboard soil sensor: residual PCB components on GPIO32/33 attenuate signal — use external sensor on GPIO35
+- Estimated 18650 runtime: ~30-35 days (1hr interval)
 
 ### Board 3: NodeMCU V3 (ESP8266) + ENS160/AHT21 — "NodeMCU ENS160"
 - **MCU**: ESP8266 (Lolin NodeMCU V3), 80MHz, WiFi only
@@ -106,8 +112,7 @@ Deep sleep: D0 (GPIO16) → RST
 Power: 18650 battery → VIN + GND
 ```
 
-### Planned Sensors (not yet connected)
-- Light (BH1750, I2C — can share D1/D2 bus)
+### Planned Sensors
 - CO2 (standalone CCS811 breakout or MH-Z19 to replace defective onboard CCS811)
 
 ---
@@ -381,7 +386,11 @@ VITE_API_URL=
 - [x] Frontend: inline confirm/cancel for all delete actions (replaced browser confirm() dialogs)
 - [x] Frontend: theme-aware charts and components (dark/light mode via CSS custom properties)
 - [x] Frontend: staleness thresholds adjusted to 75min/180min (covers 1hr sleep interval)
+- [x] DIY MORE firmware: BH1750 light sensor support (I2C on GPIO25/27, power GPIO14)
+- [x] DIY MORE firmware: SOIL_PIN config.h override for boards with chopped onboard sensor
+- [x] Frontend: light_lux metric fully supported (tiles, charts, dashboard aggregates, icons)
 - [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out)
+- [ ] DIY MORE #2 (BC:3B:BC): soil power pin — GPIO26 works but shared with DHT11+BH1750, needs dedicated pin (GPIO14/12/33 all failed to source enough current)
 - [ ] Google Home (future)
 
 ## Firmware Deployment
@@ -405,6 +414,7 @@ VITE_API_URL=
 - Libraries: NTPClient, ArduinoJson v7, Adafruit AHTX0, ScioSense_ENS16x
 
 ### DIY MORE (ESP32)
+- Libraries: NTPClient, ArduinoJson v7, DHT sensor library (Adafruit), Adafruit Unified Sensor, BH1750 (Christopher Laws)
 - Port: `/dev/cu.usbserial-0001`
 - FQBN: `esp32:esp32:esp32`
 - Compile: `arduino-cli compile --fqbn esp32:esp32:esp32 firmware/diymore`

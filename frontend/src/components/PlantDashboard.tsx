@@ -10,6 +10,7 @@ const apiUrl = import.meta.env.VITE_API_URL || '';
 const METRIC_UNITS: Record<string, { decimals: number; unit: string }> = {
   temperature: { decimals: 1, unit: '°C' },
   humidity: { decimals: 0, unit: '%' },
+  light_lux: { decimals: 0, unit: 'lux' },
   co2_ppm: { decimals: 0, unit: 'ppm' },
   tvoc_ppb: { decimals: 0, unit: 'ppb' },
 };

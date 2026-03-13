@@ -3,7 +3,7 @@
  * Board: ESP32-D0WDQ6 (DIY MORE prebuilt board with 18650 holder)
  *
  * ============================================
- * WIRING (external sensors, powered via GPIO26)
+ * WIRING
  * ============================================
  *
  * ESP32                DHT11 (temperature + humidity)
@@ -12,16 +12,19 @@
  * GPIO26  -----------> VCC (power control, shared)
  * GND     -----------> GND
  *
- * ESP32                Capacitive Soil Moisture Sensor (external)
+ * ESP32                Capacitive Soil Moisture Sensor
  * ------               --------------------------------
- * GPIO32  -----------> AOUT (analog signal)
+ * GPIO32  -----------> AOUT (analog signal) [or override via SOIL_PIN in config.h]
  * GPIO26  -----------> VCC (power control, shared)
  * GND     -----------> GND
  *
- * Note: Sensors powered via GPIO26 — turned off during deep sleep.
+ * Note: Both sensors powered via GPIO26 — turned off during deep sleep.
+ *       Boards with chopped onboard sensor: use SOIL_PIN in config.h to
+ *       override soil ADC pin (e.g. GPIO35) since GPIO32/33 have residual
+ *       PCB components that attenuate the signal.
  *       The board uses a single 18650 battery in its built-in holder.
  *       USB chip: CH340 on /dev/cu.usbserial-0001
- *       Soil pin auto-detected (GPIO32 vs GPIO33) for backward compat.
+ *       Soil pin auto-detected (GPIO32 vs GPIO33) unless SOIL_PIN is defined.
  *
  * Deep Sleep:
  * Internal RTC timer wakeup — no external wiring needed.
@@ -49,6 +52,8 @@
 #include <NTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
+#include <Wire.h>
+#include <BH1750.h>
 
 #include "config.h"
 
@@ -58,6 +63,9 @@
 #define SOIL_PIN_A 32
 #define SOIL_PIN_B 33
 #define SENSOR_POWER_PIN 26
+#define I2C_SDA 25
+#define I2C_SCL 27
+#define LIGHT_POWER_PIN 14
 
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 15000
@@ -69,10 +77,14 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
 // DHT sensor
 DHT dht(DHT_PIN, DHT_TYPE);
 
+// BH1750 light sensor
+BH1750 lightMeter;
+
 void goToSleep() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  digitalWrite(SENSOR_POWER_PIN, LOW);  // ensure sensors off before sleep
+  digitalWrite(SENSOR_POWER_PIN, LOW);
+  digitalWrite(LIGHT_POWER_PIN, LOW);
   Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
   esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_SECONDS * 1000000ULL);
   esp_deep_sleep_start();
@@ -84,9 +96,11 @@ void setup() {
   Serial.println("Smart Garden - DIY MORE ESP32");
   Serial.println("=============================");
 
-  // Power on sensors via GPIO26
+  // Power on sensors
   pinMode(SENSOR_POWER_PIN, OUTPUT);
+  pinMode(LIGHT_POWER_PIN, OUTPUT);
   digitalWrite(SENSOR_POWER_PIN, HIGH);
+  digitalWrite(LIGHT_POWER_PIN, HIGH);
 
   // Configure ADC: 12-bit resolution, 11dB attenuation (full 0-3.3V range)
   analogReadResolution(12);
@@ -95,6 +109,27 @@ void setup() {
 
   // Initialize DHT sensor
   dht.begin();
+
+  // Initialize I2C and scan bus
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Serial.printf("I2C scan (SDA=%d, SCL=%d): ", I2C_SDA, I2C_SCL);
+  int found = 0;
+  for (byte addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("0x%02X ", addr);
+      found++;
+    }
+  }
+  Serial.printf("(%d devices)\n", found);
+
+  // Initialize BH1750 light sensor
+  bool lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x23);
+  if (!lightReady) {
+    lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x5C);
+  }
+  Serial.printf("BH1750: %s\n", lightReady ? "OK" : "not found");
+
   // DHT11 needs ~1s to stabilize after power-on
   delay(1000);
 
@@ -128,6 +163,17 @@ void setup() {
 
   // --- Step 3: Read sensors ---
   // Soil moisture — raw 12-bit ADC value (0-4095)
+#ifdef SOIL_PIN
+  // Fixed soil pin (for boards with chopped onboard sensor)
+  analogSetPinAttenuation(SOIL_PIN, ADC_11db);
+  int soilSum = 0;
+  for (int i = 0; i < 10; i++) {
+    soilSum += analogRead(SOIL_PIN);
+    delay(10);
+  }
+  int rawMoisture = soilSum / 10;
+  Serial.printf("Soil - GPIO%d: %d (fixed pin)\n", SOIL_PIN, rawMoisture);
+#else
   // Auto-detect soil pin: some board revisions use GPIO32, others GPIO33
   // Read both, use the one with a higher value (the other reads ~0 noise)
   int sumA = 0, sumB = 0;
@@ -142,11 +188,21 @@ void setup() {
   int soilPin = (avgA >= avgB) ? SOIL_PIN_A : SOIL_PIN_B;
   Serial.printf("Soil - GPIO%d: %d, GPIO%d: %d → using GPIO%d = %d\n",
                 SOIL_PIN_A, avgA, SOIL_PIN_B, avgB, soilPin, rawMoisture);
+#endif
 
   // DHT11 — temperature (°C) and humidity (%)
   float temperature = dht.readTemperature();
   float humidity = dht.readHumidity();
   Serial.printf("DHT11 - Temp: %.1fC, Humidity: %.1f%%\n", temperature, humidity);
+
+  // BH1750 — light level (lux)
+  float lux = -1;
+  if (lightReady) {
+    lightMeter.configure(BH1750::ONE_TIME_HIGH_RES_MODE);
+    delay(200);
+    lux = lightMeter.readLightLevel();
+  }
+  Serial.printf("BH1750 - Light: %.1f lux\n", lux);
 
   // --- Step 4: Build JSON payload ---
   JsonDocument doc;
@@ -177,6 +233,13 @@ void setup() {
     humReading["value"] = round(humidity * 10.0) / 10.0;
   }
 
+  // Light
+  if (lux >= 0) {
+    JsonObject luxReading = readings.add<JsonObject>();
+    luxReading["metric"] = "light_lux";
+    luxReading["value"] = round(lux * 10.0) / 10.0;
+  }
+
   String payload;
   serializeJson(doc, payload);
   Serial.printf("Payload: %s\n", payload.c_str());
@@ -199,8 +262,7 @@ void setup() {
 
   http.end();
 
-  // --- Step 6: Power off sensors and sleep ---
-  digitalWrite(SENSOR_POWER_PIN, LOW);
+  // --- Step 6: Sleep ---
   goToSleep();
 }
 

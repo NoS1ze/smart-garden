@@ -32,6 +32,7 @@ const CARD_METRICS: MetricConfig[] = [
   { key: 'humidity', label: 'Humidity', unit: '%' },
   { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm' },
   { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb' },
+  { key: 'light_lux', label: 'Light', unit: ' lux' },
   { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa' },
 ];
 
@@ -85,8 +86,8 @@ export function PlantCard({ plant, onClick }: Props) {
         .order('recorded_at', { ascending: false })
         .limit(20);
 
+      const values: Record<string, number> = {};
       if (readings && readings.length > 0) {
-        const values: Record<string, number> = {};
         let latestTime: string | null = null;
 
         for (const r of readings as Reading[]) {

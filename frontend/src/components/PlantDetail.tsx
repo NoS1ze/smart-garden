@@ -26,6 +26,7 @@ const DETAIL_METRICS = [
   { key: 'humidity', label: 'Humidity', unit: '%' },
   { key: 'co2_ppm', label: 'CO\u2082', unit: ' ppm' },
   { key: 'tvoc_ppb', label: 'TVOC', unit: ' ppb' },
+  { key: 'light_lux', label: 'Light', unit: ' lux' },
   { key: 'pressure_hpa', label: 'Pressure', unit: ' hPa' },
 ];
 
