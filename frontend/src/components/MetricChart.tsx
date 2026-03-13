@@ -282,25 +282,6 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       );
     };
 
-  const getMinMax = () => {
-    if (!plantSpecies) return { min: null as number | null, max: null as number | null };
-    const prefix = getSpeciesPrefix();
-    return {
-      min: plantSpecies[`min_${prefix}` as keyof PlantSpecies] as number | null,
-      max: plantSpecies[`max_${prefix}` as keyof PlantSpecies] as number | null,
-    };
-  };
-
-  const renderOutOfRangeDot = (props: any): React.ReactElement<SVGElement> => {
-    const { min, max } = getMinMax();
-    const { cx, cy, payload } = props;
-    if (min == null && max == null) return <g />;
-    if (cx == null || cy == null || payload?.value == null) return <g />;
-    const v = payload.value;
-    const outOfRange = (min != null && v < min) || (max != null && v > max);
-    if (!outOfRange) return <g />;
-    return <circle cx={cx} cy={cy} r={4} fill={redAlert} stroke={bgBase} strokeWidth={1.5} />;
-  };
 
   const getReferenceLines = () => {
     if (!plantSpecies) return null;
@@ -438,7 +419,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
               stroke={metricColor}
               strokeWidth={2.5}
               fill={`url(#chartGradient-${metric})`}
-              dot={renderOutOfRangeDot}
+              dot={false}
               activeDot={{ r: 5, fill: metricColor, stroke: bgBase, strokeWidth: 2 }}
               name={`${metricInfo.label} (${metricInfo.unit})`}
             />
