@@ -30,7 +30,7 @@ interface Props {
 export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, plantId, sensor }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
-  const [range, setRange] = useState<Range>('24h');
+  const [range, setRange] = useState<Range>('7d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -153,6 +153,8 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     return () => clearInterval(interval);
   }, [fetchReadings, fetchLatest, fetchWateringEvents]);
 
+  const isLogScale = metric === 'light_lux';
+
   const { rawDry, rawWet } = getCalibration(soilType, adcBits, sensor);
   const convertValue = (v: number) =>
     metric === 'soil_moisture'
@@ -162,7 +164,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
   const chartData = readings.map((r) => ({
     time: new Date(r.recorded_at).getTime(),
     value: convertValue(r.value),
-  })).filter(d => isFinite(d.value) && !isNaN(d.value));
+  })).filter(d => isFinite(d.value) && !isNaN(d.value) && (!isLogScale || d.value > 0));
 
   const getRefValues = (): number[] => {
     if (!plantSpecies) return [];
@@ -186,7 +188,8 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
 
   const computeYDomain = (): [number, number] | undefined => {
     const dataValues = chartData.map(d => d.value);
-    const refValues = getRefValues();
+    // For log scale, reference lines must also be > 0
+    const refValues = getRefValues().filter(v => !isLogScale || v > 0);
     if (dataValues.length === 0 && refValues.length === 0) return undefined;
 
     // Clip data outliers with percentiles, but NEVER clip reference lines
@@ -198,6 +201,13 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       const sorted = [...dataValues].sort((a, b) => a - b);
       dataMin = sorted[Math.floor(sorted.length * 0.02)] ?? sorted[0];
       dataMax = sorted[Math.floor(sorted.length * 0.98)] ?? sorted[sorted.length - 1];
+    }
+
+    if (isLogScale) {
+      const allBounds = [dataMin, dataMax, ...refValues].filter(v => v > 0);
+      const lo = Math.max(1, Math.min(...allBounds));
+      const hi = Math.max(...allBounds);
+      return [Math.floor(lo * 0.8) || 1, Math.ceil(hi * 1.25)];
     }
 
     // Expand to always include all reference line positions
@@ -381,11 +391,14 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
               height={60}
             />
             <YAxis
+              scale={isLogScale ? 'log' : 'auto'}
               tick={{ fill: textMuted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              width={35}
+              width={isLogScale ? 45 : 35}
               domain={yDomain}
+              tickFormatter={isLogScale ? (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(Math.round(v)) : undefined}
+              allowDataOverflow={isLogScale}
             />
             <Tooltip
               contentStyle={{

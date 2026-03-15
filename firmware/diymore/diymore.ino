@@ -86,6 +86,7 @@ void goToSleep() {
   digitalWrite(SENSOR_POWER_PIN, LOW);
   digitalWrite(LIGHT_POWER_PIN, LOW);
   Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
+  Serial.flush();
   esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_SECONDS * 1000000ULL);
   esp_deep_sleep_start();
 }
@@ -110,30 +111,25 @@ void setup() {
   // Initialize DHT sensor
   dht.begin();
 
-  // Initialize I2C and scan bus
+  // Initialize I2C
   Wire.begin(I2C_SDA, I2C_SCL);
-  Serial.printf("I2C scan (SDA=%d, SCL=%d): ", I2C_SDA, I2C_SCL);
-  int found = 0;
-  for (byte addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      Serial.printf("0x%02X ", addr);
-      found++;
-    }
-  }
-  Serial.printf("(%d devices)\n", found);
 
-  // Initialize BH1750 light sensor
+  // Initialize BH1750 and trigger first measurement immediately —
+  // the 200ms measurement overlaps with the DHT11 warm-up delay below.
   bool lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x23);
   if (!lightReady) {
     lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x5C);
   }
+  if (lightReady) {
+    lightMeter.configure(BH1750::ONE_TIME_HIGH_RES_MODE); // trigger measurement now
+  }
   Serial.printf("BH1750: %s\n", lightReady ? "OK" : "not found");
 
-  // DHT11 needs ~1s to stabilize after power-on
+  // DHT11 needs ~1s to stabilize after power-on (BH1750 200ms measurement fits here)
   delay(1000);
 
   // --- Step 1: Connect to WiFi ---
+  WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("Connecting to %s", WIFI_SSID);
@@ -195,11 +191,9 @@ void setup() {
   float humidity = dht.readHumidity();
   Serial.printf("DHT11 - Temp: %.1fC, Humidity: %.1f%%\n", temperature, humidity);
 
-  // BH1750 — light level (lux)
+  // BH1750 — light level (lux). Measurement was triggered at boot; just read result.
   float lux = -1;
   if (lightReady) {
-    lightMeter.configure(BH1750::ONE_TIME_HIGH_RES_MODE);
-    delay(200);
     lux = lightMeter.readLightLevel();
   }
   Serial.printf("BH1750 - Light: %.1f lux\n", lux);

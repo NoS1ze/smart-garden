@@ -58,7 +58,12 @@ void setup() {
   Serial.println("Smart Garden - Soil Moisture Sensor");
   Serial.println("====================================");
 
+  // Power on soil sensor early so its 100ms warm-up overlaps with WiFi connect
+  pinMode(SENSOR_POWER_PIN, OUTPUT);
+  digitalWrite(SENSOR_POWER_PIN, HIGH);
+
   // --- Step 1: Connect to WiFi ---
+  WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("Connecting to %s", WIFI_SSID);
@@ -68,6 +73,8 @@ void setup() {
     if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
       Serial.println();
       Serial.println("WiFi timeout, sleeping");
+      WiFi.mode(WIFI_OFF);
+      Serial.flush();
       ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
       return;
     }
@@ -87,20 +94,13 @@ void setup() {
   Serial.printf("Unix epoch: %lu\n", epochTime);
 
   // --- Step 3: Read soil moisture sensor ---
-  pinMode(SENSOR_POWER_PIN, OUTPUT);
-  digitalWrite(SENSOR_POWER_PIN, HIGH);
+  // Sensor was powered on before WiFi; ensure at least 100ms has elapsed
   delay(100);
 
   int rawValue = analogRead(SENSOR_ANALOG_PIN);
-
-  // Map raw value to percentage (800=dry=0%, 400=wet=100%)
-  float moisture = map(rawValue, RAW_DRY, RAW_WET, 0, 100);
-  if (moisture < 0) moisture = 0;
-  if (moisture > 100) moisture = 100;
-
   digitalWrite(SENSOR_POWER_PIN, LOW);
 
-  Serial.printf("Raw: %d, Moisture: %.1f%%\n", rawValue, moisture);
+  Serial.printf("Soil raw: %d\n", rawValue);
 
   // --- Step 4: Build JSON payload ---
   JsonDocument doc;
@@ -108,7 +108,7 @@ void setup() {
   JsonArray readings = doc["readings"].to<JsonArray>();
   JsonObject reading = readings.add<JsonObject>();
   reading["metric"] = "soil_moisture";
-  reading["value"] = round(moisture * 10.0) / 10.0;
+  reading["value"] = rawValue;
   doc["recorded_at"] = epochTime;
   doc["adc_bits"] = 10;
   doc["board_type"] = "nodemcu_hdc1080";
@@ -137,7 +137,9 @@ void setup() {
 
   // --- Step 6: Sleep ---
   WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
   Serial.println("Going to sleep...");
+  Serial.flush();
   ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
 }
 

@@ -100,6 +100,7 @@ void setup() {
   Serial.printf("ENS160: %s\n", ensReady ? "OK" : "FAILED");
 
   // --- Step 1: Connect to WiFi ---
+  WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("Connecting to %s", WIFI_SSID);
@@ -109,6 +110,8 @@ void setup() {
     if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
       Serial.println();
       Serial.println("WiFi timeout, sleeping");
+      WiFi.mode(WIFI_OFF);
+      Serial.flush();
       ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
       return;
     }
@@ -214,7 +217,9 @@ void setup() {
 
   // --- Step 6: Sleep ---
   WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
   Serial.printf("Going to sleep for %d seconds...\n", SLEEP_SECONDS);
+  Serial.flush();
   ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
 }
 
