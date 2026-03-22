@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { supabase } from '../lib/supabase';
 import { Plant, Sensor, SoilType, PlantSpecies, Room, Reading, WateringSchedule } from '../types';
 import { MetricChart } from './MetricChart';
@@ -9,7 +8,7 @@ import { WateringLog } from './WateringLog';
 import { PhotoUpload } from './PhotoUpload';
 import { rawToPercent, timeAgo, getMetricStatus, getMetricRanges, getCalibration } from '../lib/calibration';
 import { ZonedGradientBar, getZoneLabel } from './ZonedGradientBar';
-import { MetricIcon } from './Icons';
+import { MetricIcon, SunIcon, MoonIcon } from './Icons';
 import { useToast } from './Toast';
 
 interface Props {
@@ -40,41 +39,35 @@ const ACCENT_COLORS: Record<string, string> = {
   light_lux: 'var(--metric-light)',
 };
 
-const cssVar = (name: string, fallback: string) => {
-  try {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-  } catch { return fallback; }
-};
 
-const resolveColor = (color: string): string => {
-  const match = color.match(/^var\(([^)]+)\)$/);
-  if (match) return cssVar(match[1], '#22c55e');
-  return color;
-};
-
-function useTrendData(apiUrl: string, sensorId: string | undefined, metric: string, convertValue?: (raw: number) => number) {
-  const [trendData, setTrendData] = useState<{ points: { avg: number }[]; trend: string; change_pct: number | null } | null>(null);
+function useDayNightAvg(sensorId: string | undefined, metricKey: string, convertValue?: (raw: number) => number) {
+  const [data, setData] = useState<{ dayAvg: number | null; nightAvg: number | null } | null>(null);
   useEffect(() => {
     if (!sensorId) return;
-    fetch(`${apiUrl}/api/readings/trends?sensor_id=${sensorId}&metric=${metric}&period=7d`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data) return;
+    const from = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    supabase
+      .from('readings')
+      .select('value, recorded_at')
+      .eq('sensor_id', sensorId)
+      .eq('metric', metricKey)
+      .gte('recorded_at', from)
+      .then(({ data: rows }) => {
+        if (!rows || rows.length === 0) return;
         const cv = convertValue || ((v: number) => v);
-        const points = (data.points || [])
-          .filter((p: any) => p.avg != null && isFinite(p.avg))
-          .map((p: any) => ({ avg: cv(p.avg) }));
-        let change_pct = data.change_pct;
-        if (convertValue && data.current_avg != null && data.previous_avg != null && isFinite(data.previous_avg)) {
-          const cur = cv(data.current_avg);
-          const prev = cv(data.previous_avg);
-          change_pct = prev !== 0 ? Math.round(((cur - prev) / Math.abs(prev)) * 1000) / 10 : 0;
+        const dayVals: number[] = [];
+        const nightVals: number[] = [];
+        for (const r of rows) {
+          const val = cv(r.value);
+          if (!isFinite(val) || isNaN(val)) continue;
+          const hour = new Date(r.recorded_at).getHours();
+          if (hour >= 7 && hour < 20) dayVals.push(val);
+          else nightVals.push(val);
         }
-        setTrendData({ points, trend: data.trend || 'stable', change_pct });
-      })
-      .catch(() => {});
-  }, [apiUrl, sensorId, metric]);
-  return trendData;
+        const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+        setData({ dayAvg: avg(dayVals), nightAvg: avg(nightVals) });
+      });
+  }, [sensorId, metricKey]);
+  return data;
 }
 
 interface MetricTileProps {
@@ -86,28 +79,54 @@ interface MetricTileProps {
   status: { status: string };
   panelStale: boolean;
   sensorId: string | undefined;
-  apiUrl: string;
   convertValue?: (raw: number) => number;
 }
 
-function MetricTile({ metricKey, label, unit, value, ranges, status, panelStale, sensorId, apiUrl, convertValue }: MetricTileProps) {
-  const trendData = useTrendData(apiUrl, sensorId, metricKey, convertValue);
+function MetricTile({ metricKey, label, unit, value, ranges, status, panelStale, sensorId, convertValue }: MetricTileProps) {
+  const dayNight = useDayNightAvg(sensorId, metricKey, convertValue);
   const hasRanges = ranges.min != null && ranges.optMin != null && ranges.optMax != null && ranges.max != null;
   const zoneInfo = hasRanges
     ? getZoneLabel(value, ranges.min!, ranges.optMin!, ranges.optMax!, ranges.max!)
     : null;
-  const accent = resolveColor(ACCENT_COLORS[metricKey] || 'var(--green-vivid)');
-
+  const dp = metricKey === 'temperature' ? 1 : 0;
+  const hasDayNight = dayNight && (dayNight.dayAvg !== null || dayNight.nightAvg !== null);
   return (
     <div className="metric-tile">
-      <div className="metric-tile-icon" style={{ color: ACCENT_COLORS[metricKey] }}>
-        <MetricIcon metric={metricKey} size={20} />
+      <div className="metric-tile-header">
+        <div className="metric-tile-icon" style={{ color: ACCENT_COLORS[metricKey] }}>
+          <MetricIcon metric={metricKey} size={22} />
+        </div>
+        <div className="metric-tile-main">
+          <div className="metric-tile-value">
+            {value.toFixed(dp)}
+            <span className="metric-tile-unit">{unit}</span>
+          </div>
+          <div className="metric-tile-label">{label}</div>
+        </div>
+        {(hasDayNight || zoneInfo) && (
+          <div className="metric-tile-aside">
+            {hasDayNight && (
+              <div className="metric-tile-daynight">
+                {dayNight!.dayAvg !== null && (
+                  <span className="daynight-item">
+                    <SunIcon size={10} />
+                    {dayNight!.dayAvg.toFixed(dp)}{unit}
+                  </span>
+                )}
+                {dayNight!.nightAvg !== null && (
+                  <span className="daynight-item">
+                    <MoonIcon size={10} />
+                    {dayNight!.nightAvg.toFixed(dp)}{unit}
+                  </span>
+                )}
+              </div>
+            )}
+            {zoneInfo && (
+              <div className={`metric-tile-status ${status.status}`}>{zoneInfo.text}</div>
+            )}
+          </div>
+        )}
       </div>
-      <div className="metric-tile-value">
-        {value.toFixed(metricKey === 'temperature' ? 1 : 0)}
-        <span className="metric-tile-unit">{unit}</span>
-      </div>
-      <div className="metric-tile-label">{label}</div>
       <ZonedGradientBar
         value={value}
         min={ranges.min}
@@ -117,30 +136,6 @@ function MetricTile({ metricKey, label, unit, value, ranges, status, panelStale,
         isStale={panelStale}
         accentColor={ACCENT_COLORS[metricKey]}
       />
-      {zoneInfo && (
-        <div className={`metric-tile-status ${status.status}`}>
-          {zoneInfo.text}
-        </div>
-      )}
-      {trendData && trendData.points.length > 1 && (
-        <div className="metric-tile-trend">
-          <div className="metric-tile-sparkline">
-            <ResponsiveContainer width="100%" height={28}>
-              <AreaChart data={trendData.points}>
-                <Area type="natural" dataKey="avg" stroke={accent}
-                      fill={accent} fillOpacity={0.06}
-                      strokeWidth={1.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {trendData.change_pct != null && (
-            <span className={`metric-tile-change ${trendData.trend}`}>
-              {trendData.trend === 'up' ? '\u2191' : trendData.trend === 'down' ? '\u2193' : '\u2192'}
-              {trendData.change_pct > 0 ? '+' : ''}{trendData.change_pct}%
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -675,7 +670,6 @@ export function PlantDetail({ plantId, onBack, onNavigateSoilTypes, onNavigatePl
                 status={getMetricStatus(displayValues[m.key], plant.plant_species, m.key)}
                 panelStale={panelStale}
                 sensorId={sensors.length > 0 ? sensors[0].id : undefined}
-                apiUrl={apiUrl}
                 convertValue={tileConvert(m.key)}
               />
             ))}

@@ -22,22 +22,43 @@ Web Dashboard reads from Supabase
 ### Board 1: NodeMCU V3 (ESP8266) — "NodeMCU"
 - **MCU**: ESP8266 (Lolin NodeMCU V3), 80MHz, WiFi only
 - **MAC**: 8C:CE:4E:CE:66:15
-- **USB**: CH340 on `/dev/cu.wchusbserial10`
+- **USB**: CH340 on `/dev/cu.wchusbserial110` (port may vary — check `ls /dev/cu.wch*`)
 - **FQBN**: `esp8266:esp8266:nodemcuv2`
-- **Firmware**: `firmware/combined/combined.ino` (also `firmware/soil_moisture/`)
-- **Sleep interval**: 5 minutes
+- **Firmware**: `firmware/soil_moisture/`
+- **Sleep interval**: 1 hour
 - **ADC**: 10-bit (0-1023), single pin A0
 - **Deep sleep**: GPIO16 jumpered to RST
 
 **Sensors:**
 - Capacitive Soil Moisture v2.0: A0 (analog), powered via D1 (GPIO5) — turn on, wait 100ms, read, turn off
   - Raw calibration: ~800 = dry, ~400 = wet
-- CJMCU-8118 / HDC1080: I2C on D1/D2 (SCL=GPIO5, SDA=GPIO4) — temperature + humidity
-  - CCS811 on same board is defective — not used
+- HTU21D: I2C on D5/D6 (SCL=GPIO14, SDA=GPIO12), address 0x40 — temperature + humidity
+- BH1750 (GY-302): I2C on D5/D6, address 0x23 (ADDR→GND) — light level (lux)
+  - Firmware tries 0x23 then 0x5C, uses ONE_TIME_HIGH_RES_MODE
+
+**Wiring:**
+```
+NodeMCU V3          HTU21D + BH1750 (shared I2C bus)
+---------           --------------------------------
+3V3         ------> VCC (both sensors — standby current negligible)
+GND         ------> GND (both sensors)
+D5 (GPIO14) ------> SCL (both sensors)
+D6 (GPIO12) ------> SDA (both sensors)
+                    BH1750 ADDR → GND  (address 0x23)
+
+NodeMCU V3          Capacitive Soil Moisture v2.0
+---------           -----------------------------
+D1 (GPIO5)  ------> VCC (power control)
+GND         ------> GND
+A0          ------> AOUT (analog signal)
+
+Deep sleep: D0 (GPIO16) → RST
+Power: 18650 battery → MCP1700 VIN/GND → NodeMCU 3.3V/GND
+```
 
 **Power notes:**
-- AMS1117 regulator draws ~5-10mA quiescent even during deep sleep
-- Estimated 18650 runtime: ~10 days (dominated by regulator quiescent current)
+- MCP1700 LDO regulator: ~1.6µA quiescent (vs AMS1117 ~5-10mA) — critical for battery life
+- Estimated 18650 runtime: ~60-90 days with MCP1700 at 1hr interval
 
 ### Board 2: DIY MORE ESP32 — "DIY MORE"
 Monolith prebuilt boards — soil moisture sensor + DHT11 hardwired on PCB.
@@ -129,7 +150,7 @@ Firmware sends raw ADC values for soil_moisture — frontend handles calibration
 
 | Board | Sketch | ADC range | Sleep | board_type slug |
 |-------|--------|-----------|-------|-----------------|
-| NodeMCU + HDC1080 | `firmware/soil_moisture/` | 0-1023 (10-bit) | 1 hour | `nodemcu_hdc1080` |
+| NodeMCU + HTU21D + BH1750 | `firmware/soil_moisture/` | 0-1023 (10-bit) | 1 hour | `nodemcu_htu21d_bh1750` |
 | DIY MORE + DHT11 | `firmware/diymore/` | 0-4095 (12-bit) | 1 hour | `diymore_dht11` |
 | NodeMCU + ENS160/AHT21 | `firmware/nodemcu_bme680/` | 0-1023 (10-bit) | 1 hour | `nodemcu_ens160_aht21` |
 
@@ -313,7 +334,7 @@ Table: `sensor_plant` (junction table)
 - All readings posted in ONE request per wake cycle (minimizes WiFi on-time)
 - MAC address sent with every POST — backend auto-registers unknown boards
 - `config.h` stores: WiFi credentials, API endpoint, sleep interval (NO sensor_id — MAC is used instead)
-- NodeMCU: sensor powered off between readings (D1 pin), 5 min cycle
+- NodeMCU: soil sensor powered off between readings (D1 pin), 1 hour cycle; I2C sensors on 3V3 (negligible standby current)
 - DIY MORE: sensors hardwired to VCC (always on), 1 hour cycle
 
 ## Alert Logic (backend)
@@ -366,7 +387,7 @@ VITE_API_URL=
 - [x] Supabase project created + schema applied
 - [x] Backend API — FastAPI, all endpoints, Pydantic validation, CORS
 - [x] Alert engine — cooldown check, SendGrid email, alert_history logging
-- [x] ESP8266 firmware — soil_moisture + temp/humidity posting every 5 min (deep sleep)
+- [x] ESP8266 firmware — soil_moisture + temp/humidity + light_lux posting every 1 hour (deep sleep, HTU21D + BH1750)
 - [x] ESP32 DIY MORE firmware — soil_moisture + temp/humidity posting every 1 hour (deep sleep)
 - [x] NodeMCU ENS160/AHT21 firmware — soil_moisture + temp/humidity + eCO2/TVOC posting every 1 hour (deep sleep)
 - [x] Board types system — board_types table with JSONB sensor metadata, CRUD API, frontend display
@@ -401,11 +422,12 @@ VITE_API_URL=
 - Cores installed: `esp8266:esp8266` v3.1.2, `esp32:esp32` v3.0.7
 - `config.h` lives in each sketch directory (gitignored) — contains WiFi creds, API endpoint, sleep interval
 
-### NodeMCU (ESP8266)
-- Port: `/dev/cu.wchusbserial10`
+### NodeMCU + HTU21D + BH1750 (ESP8266)
+- Port: `/dev/cu.wchusbserial110` (may vary — check `ls /dev/cu.wch*`)
 - FQBN: `esp8266:esp8266:nodemcuv2`
+- Libraries: NTPClient, ArduinoJson v7, SparkFun HTU21D, BH1750 (Christopher Laws)
 - Compile: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 firmware/soil_moisture`
-- Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial10 firmware/soil_moisture`
+- Upload: `arduino-cli upload --fqbn esp8266:esp8266:nodemcuv2 --port /dev/cu.wchusbserial110 firmware/soil_moisture`
 - Board must be awake to flash — hold FLASH + press RST, then release FLASH
 
 ### NodeMCU + ENS160/AHT21 (ESP8266)

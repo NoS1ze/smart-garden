@@ -95,14 +95,20 @@ void setup() {
   bool ensReady = ens160.isConnected();
   if (ensReady) {
     ens160.startStandardMeasure();
-    delay(1100); // Wait one full 1s measurement cycle
   }
   Serial.printf("ENS160: %s\n", ensReady ? "OK" : "FAILED");
 
-  // --- Step 1: Connect to WiFi ---
+  // Start WiFi before the ENS160 delay so connection overlaps with the 1s measurement cycle
+  WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  if (ensReady) {
+    delay(1100); // Wait one full 1s measurement cycle (WiFi connects during this)
+  }
+
+  // --- Step 1: Connect to WiFi ---
   Serial.printf("Connecting to %s", WIFI_SSID);
 
   unsigned long wifiStart = millis();

@@ -46,7 +46,7 @@
  */
 
 #include <WiFi.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <WiFiUdp.h>
 #include <NTPClient.h>
@@ -92,6 +92,8 @@ void goToSleep() {
 }
 
 void setup() {
+  btStop();  // disable BT controller — never used, saves idle current
+
   Serial.begin(115200);
   Serial.println();
   Serial.println("Smart Garden - DIY MORE ESP32");
@@ -125,13 +127,14 @@ void setup() {
   }
   Serial.printf("BH1750: %s\n", lightReady ? "OK" : "not found");
 
-  // DHT11 needs ~1s to stabilize after power-on (BH1750 200ms measurement fits here)
-  delay(1000);
-
-  // --- Step 1: Connect to WiFi ---
+  // Start WiFi now so it connects during the mandatory DHT11 warm-up delay below
+  WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  // DHT11 needs ~1s to stabilize after power-on (BH1750 200ms + WiFi connect overlap here)
+  delay(1000);
   Serial.printf("Connecting to %s", WIFI_SSID);
 
   unsigned long wifiStart = millis();
@@ -239,10 +242,12 @@ void setup() {
   Serial.printf("Payload: %s\n", payload.c_str());
 
   // --- Step 5: POST to API ---
-  WiFiClient client;
+  WiFiClientSecure client;
+  client.setInsecure();  // skip cert validation — acceptable for IoT
   HTTPClient http;
   String url = String(API_ENDPOINT) + "/api/readings";
   http.begin(client, url);
+  http.setTimeout(10000);  // 10s timeout — prevents infinite hang on bad connection
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(payload);

@@ -30,7 +30,8 @@ interface Props {
 export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, plantId, sensor }: Props) {
   const [metric, setMetric] = useState<Metric>('soil_moisture');
   const [availableMetrics, setAvailableMetrics] = useState<Set<Metric>>(new Set(['soil_moisture']));
-  const [range, setRange] = useState<Range>('7d');
+  const [range, setRange] = useState<Range>('24h');
+  const [dayOffset, setDayOffset] = useState(0); // 0 = today, -1 = yesterday, etc.
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -58,9 +59,19 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       }
       from = new Date(customFrom).toISOString();
       to = new Date(customTo + 'T23:59:59').toISOString();
+    } else if (range === '24h') {
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setDate(dayStart.getDate() + dayOffset);
+      from = dayStart.toISOString();
+      if (dayOffset < 0) {
+        const dayEnd = new Date(dayStart);
+        dayEnd.setHours(23, 59, 59, 999);
+        to = dayEnd.toISOString();
+      }
     } else {
       const now = Date.now();
-      const ms = { '24h': 86400000, '7d': 604800000, '30d': 2592000000 }[range];
+      const ms = { '7d': 604800000, '30d': 2592000000 }[range as '7d' | '30d'];
       from = new Date(now - ms).toISOString();
     }
 
@@ -86,7 +97,7 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       setReadings((data ?? []).reverse()); // reverse back to chronological order for the chart
     }
     setLoading(false);
-  }, [sensorId, metric, range, customFrom, customTo]);
+  }, [sensorId, metric, range, dayOffset, customFrom, customTo]);
 
   const fetchAvailableMetrics = useCallback(async () => {
     const checks = await Promise.all(
@@ -220,6 +231,14 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
 
   const yDomain = computeYDomain();
 
+  const getDayLabel = () => {
+    if (dayOffset === 0) return 'Today';
+    if (dayOffset === -1) return 'Yesterday';
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   const formatXTick = (timestamp: number) => {
     const d = new Date(timestamp);
     if (range === '24h') {
@@ -338,12 +357,19 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
             <button
               key={r}
               className={range === r ? 'time-btn active' : 'time-btn'}
-              onClick={() => setRange(r)}
+              onClick={() => { setRange(r); if (r === '24h') setDayOffset(0); }}
             >
               {r === 'custom' ? 'Custom' : r}
             </button>
           ))}
         </div>
+        {range === '24h' && (
+          <div className="day-nav">
+            <button className="day-nav-btn" onClick={() => setDayOffset(o => o - 1)}>&#8249;</button>
+            <span className="day-nav-label">{getDayLabel()}</span>
+            <button className="day-nav-btn" onClick={() => setDayOffset(o => o + 1)} disabled={dayOffset >= 0}>&#8250;</button>
+          </div>
+        )}
         {range === 'custom' && (
           <span className="custom-dates">
             <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
@@ -381,7 +407,17 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
             <XAxis
               dataKey="time"
               type="number"
-              domain={['dataMin', 'dataMax']}
+              domain={(() => {
+                if (range === '24h') {
+                  const dayStart = new Date();
+                  dayStart.setHours(0, 0, 0, 0);
+                  dayStart.setDate(dayStart.getDate() + dayOffset);
+                  const dayEnd = new Date(dayStart);
+                  dayEnd.setHours(23, 59, 59, 999);
+                  return [dayStart.getTime(), dayOffset < 0 ? dayEnd.getTime() : Date.now()];
+                }
+                return ['dataMin', 'dataMax'];
+              })()}
               tick={{ fill: textMuted, fontSize: 11 }}
               axisLine={false}
               tickLine={false}
