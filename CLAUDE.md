@@ -413,6 +413,7 @@ VITE_API_URL=
 - [x] Frontend: light_lux metric fully supported (tiles, charts, dashboard aggregates, icons)
 - [x] DIY MORE #1, #3, #4: BH1750 confirmed working after resoldering GPIO25 (SDA) / GPIO27 (SCL)
 - [x] Firmware: `firmware/diymore_test/` test sketch for hardware debugging (no WiFi/sleep, loops all sensors every 2s)
+- [x] Frontend: plant cards redesigned to circular SVG arc-ring dials (Red Dot Award aesthetic) — 4 concentric rings (soil, temp, humidity, light), species range highlight, per-metric hex colors, dark halo labels
 - [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out)
 - [ ] DIY MORE #2 (BC:3B:BC): soil reads ~650 in air (should be ~3430) — confirmed PCB trace defect on GPIO32, not a power issue; fix is external sensor on GPIO35 with `SOIL_PIN 35` in config.h
 - [ ] Google Home (future)

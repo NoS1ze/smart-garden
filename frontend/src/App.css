@@ -238,21 +238,29 @@ h1, h2, h3 {
 /* ---- Dashboard Header ---- */
 .dashboard-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--bg-glass-border);
 }
 
 .dashboard-header h2 {
-  font-size: 1.5rem;
+  font-family: 'DM Serif Display', serif;
+  font-size: 2rem;
+  font-weight: 400;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1;
+  margin: 0;
 }
 
 /* ---- Plant Grid ---- */
 .plant-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--section-gap);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
+  gap: 20px;
+  justify-content: start;
 }
 
 /* ---- Plant Card ---- */
@@ -456,13 +464,13 @@ h1, h2, h3 {
 /* ---- Add Plant Card (dashed) ---- */
 .add-plant-card {
   border: 1px dashed var(--text-dim);
-  border-radius: var(--radius-card);
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 160px;
+  min-height: 260px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -492,6 +500,137 @@ h1, h2, h3 {
 
 .add-plant-card:hover .add-plant-text {
   color: var(--text-muted);
+}
+
+/* ====================================================
+   PLANT CIRCLE CARD — Red Dot Award inspired design
+   Concentric arc rings per metric, circular dial widget
+   ==================================================== */
+
+.plant-circle-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-glass-border);
+  border-radius: 20px;
+  padding: 20px 14px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  position: relative;
+  min-height: 260px;
+}
+
+.plant-circle-card:hover {
+  transform: translateY(-3px);
+  background: var(--bg-card-hover);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.plant-circle-card.health-green {
+  border-color: rgba(34, 197, 94, 0.22);
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.07);
+}
+
+.plant-circle-card.health-amber {
+  border-color: rgba(245, 158, 11, 0.22);
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.07);
+}
+
+.plant-circle-card.health-red {
+  border-color: rgba(239, 68, 68, 0.28);
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.09);
+}
+
+.plant-circle-card.attention {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+/* SVG arc rings container */
+.arc-rings-container {
+  width: 172px;
+  height: 172px;
+  flex-shrink: 0;
+}
+
+/* Gentle glow on the SVG when health is critical */
+.plant-circle-card.health-red .arc-rings-container svg {
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.15));
+}
+
+.plant-circle-card.health-amber .arc-rings-container svg {
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.12));
+}
+
+/* Info section beneath rings */
+.circle-card-info {
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.circle-card-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.circle-card-species {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.circle-card-metrics {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 7px;
+}
+
+.circle-metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.circle-metric-pill .pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pill-color, var(--green-vivid));
+  flex-shrink: 0;
+}
+
+.circle-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 5px;
+}
+
+.circle-card-no-data {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-top: 10px;
 }
 
 /* ---- Buttons ---- */
@@ -1947,7 +2086,7 @@ h1, h2, h3 {
 
 /* ---- Room Sections ---- */
 .room-section {
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .room-section-header {
@@ -1955,17 +2094,25 @@ h1, h2, h3 {
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  padding-bottom: 12px;
-  margin-bottom: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 20px;
   border-bottom: 1px solid var(--bg-glass-border);
   user-select: none;
+  transition: opacity 0.15s ease;
+}
+
+.room-section-header:hover {
+  opacity: 0.85;
 }
 
 .room-section-header h3 {
   font-family: 'DM Serif Display', serif;
-  font-size: 1.15rem;
+  font-size: 1.2rem;
+  font-weight: 400;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.01em;
+  transition: color 0.2s;
 }
 
 .room-section-header:hover h3 {
@@ -1973,16 +2120,17 @@ h1, h2, h3 {
 }
 
 .room-section-count {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   background: var(--bg-glass);
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 100px;
+  border: 1px solid var(--bg-glass-border);
 }
 
 .room-metric-chips {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   margin-left: auto;
 }
 
@@ -1990,9 +2138,10 @@ h1, h2, h3 {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.75rem;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .toggle-icon {
@@ -2015,11 +2164,11 @@ h1, h2, h3 {
 
 /* ---- Stats Subtitle ---- */
 .stats-subtitle {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-muted);
-  margin-top: -16px;
-  margin-bottom: 24px;
-  opacity: 0.7;
+  margin-top: -20px;
+  margin-bottom: 28px;
+  letter-spacing: 0.02em;
 }
 
 /* ---- Detail Tags ---- */
@@ -2579,7 +2728,8 @@ label.btn-sm {
 
 /* ---- Responsive ---- */
 @media (max-width: 767px) {
-  .plant-grid, .sensor-grid { grid-template-columns: 1fr; }
+  .plant-grid { grid-template-columns: repeat(2, 1fr); justify-content: stretch; }
+  .sensor-grid { grid-template-columns: 1fr; }
   .topnav-centre { gap: 2px; }
 
   .page-content {
@@ -2610,6 +2760,7 @@ label.btn-sm {
 }
 
 @media (max-width: 480px) {
+  .plant-grid { grid-template-columns: 1fr; }
   .metric-tiles-grid {
     grid-template-columns: 1fr !important;
   }
