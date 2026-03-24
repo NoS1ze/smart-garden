@@ -11,7 +11,7 @@ const METRIC_HEX: Record<string, string> = {
   co2_ppm:       '#a78bfa',  // purple
   tvoc_ppb:      '#f472b6',  // pink
   pressure_hpa:  '#94a3b8',  // slate
-  light_lux:     '#fbbf24',  // yellow
+  light_lux:     '#a3e635',  // lime (distinct from amber temperature)
 };
 
 // Keep CSS vars for HTML elements (they work fine there)
@@ -37,21 +37,28 @@ const DEFAULT_RANGES: Record<string, [number, number]> = {
 };
 
 // ─── Ring config: 4 primary rings, outermost first ──────────────────────────
-const ARC_METRICS   = ['soil_moisture', 'temperature', 'humidity', 'light_lux'];
-const RING_RADII    = [86, 72, 58, 44];
-const RING_STROKE   = 9;
+const ARC_METRICS  = ['soil_moisture', 'temperature', 'humidity', 'light_lux'];
+const RING_RADII   = [84, 70, 56, 42];
+const RING_STROKE  = 10;
 const CX = 100;
 const CY = 100;
-const SWEEP_DEG     = 270;
-const START_ANGLE   = 135; // arc starts bottom-left (7:30), sweeps CW 270° to bottom-right
+const SWEEP_DEG    = 270;
+const START_ANGLE  = 135; // arc starts bottom-left (7:30), sweeps CW 270° to bottom-right
 
-// Label position angles (one per ring slot) — staggered in upper arc region
-// soil=315°, temp=300°, humidity=270°, light=240°
-const LABEL_ANGLES_RAD = [315, 300, 270, 240].map(d => d * Math.PI / 180);
-const LABEL_OFFSET     = 13; // px outside ring radius (viewBox units)
+// Legend: right-side panel in the 40-unit extension (viewBox 0 0 240 200)
+// 4 rows symmetric around CY=100: y = 76, 92, 108, 124
+const LEGEND_OFFSETS = [-24, -8, 8, 24];
 
 // Extra metrics shown as pills below (not rings)
 const EXTRA_METRICS = ['co2_ppm', 'tvoc_ppb', 'pressure_hpa'];
+
+// Health color → hex
+const HEALTH_HEX: Record<string, string> = {
+  green: '#22c55e',
+  amber: '#f59e0b',
+  red:   '#ef4444',
+  none:  '#4ade80',
+};
 
 interface Props { plant: Plant; onClick: () => void; }
 
@@ -73,19 +80,17 @@ function fmtValue(key: string, value: number, decimals: number, unit: string): s
 
 // ─── ArcRing ─────────────────────────────────────────────────────────────────
 interface ArcRingProps {
-  value:        number;
-  defMin:       number;  // DEFAULT_RANGES min (normalization scale)
-  defMax:       number;  // DEFAULT_RANGES max
-  specMin:      number | null; // species min/max for range highlight
-  specMax:      number | null;
-  hexColor:     string;
-  radius:       number;
-  isStale:      boolean;
-  label:        string;
-  labelAngle:   number; // radians
+  value:    number;
+  defMin:   number;   // DEFAULT_RANGES min (normalization scale)
+  defMax:   number;   // DEFAULT_RANGES max
+  specMin:  number | null; // species min/max for range highlight
+  specMax:  number | null;
+  hexColor: string;
+  radius:   number;
+  isStale:  boolean;
 }
 
-function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, isStale, label, labelAngle }: ArcRingProps) {
+function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, isStale }: ArcRingProps) {
   const circumference = 2 * Math.PI * radius;
   const sweepLen      = circumference * (SWEEP_DEG / 360);
   const normalized    = Math.max(0, Math.min(1, (value - defMin) / (defMax - defMin)));
@@ -104,7 +109,7 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, is
           fill="none"
           stroke={hexColor}
           strokeWidth={RING_STROKE}
-          strokeOpacity={0.32}
+          strokeOpacity={0.30}
           strokeLinecap="butt"
           strokeDasharray={`${len} ${circumference}`}
           transform={`rotate(${startA} ${CX} ${CY})`}
@@ -112,12 +117,6 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, is
       );
     }
   }
-
-  // Label position just outside ring at designated angle
-  const labelR = radius + LABEL_OFFSET;
-  const lx = CX + labelR * Math.cos(labelAngle);
-  const ly = CY + labelR * Math.sin(labelAngle);
-  const anchor = lx > CX + 4 ? 'end' : lx < CX - 4 ? 'start' : 'middle';
 
   return (
     <g opacity={isStale ? 0.4 : 1}>
@@ -145,22 +144,6 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, is
           style={{ transition: 'stroke-dasharray 0.9s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
         />
       )}
-      {/* Value label — dark halo via paintOrder keeps text readable over rings */}
-      <text
-        x={lx} y={ly}
-        textAnchor={anchor}
-        dominantBaseline="middle"
-        fontSize="12"
-        fontFamily="DM Sans, sans-serif"
-        fontWeight="700"
-        fill={hexColor}
-        stroke="#0d1510"
-        strokeWidth="3"
-        strokeLinejoin="round"
-        style={{ paintOrder: 'stroke fill' }}
-      >
-        {label}
-      </text>
     </g>
   );
 }
@@ -254,6 +237,7 @@ export function PlantCard({ plant, onClick }: Props) {
   const isStale     = lastReadingTime ? timeAgo(lastReadingTime).staleness === 'dead' : false;
   const healthColor = getOverallHealth(latestValues, plant.plant_species,
     ARC_METRICS.filter(k => latestValues[k] !== undefined));
+  const centerHex   = HEALTH_HEX[healthColor] ?? HEALTH_HEX.none;
 
   const extraMetrics = EXTRA_METRICS.flatMap(key => {
     if (latestValues[key] === undefined) return [];
@@ -272,7 +256,8 @@ export function PlantCard({ plant, onClick }: Props) {
   return (
     <div className={cardClasses} onClick={onClick}>
       <div className="arc-rings-container">
-        <svg viewBox="0 0 200 200" width="100%" height="100%" aria-hidden="true">
+        {/* viewBox 240×200: left 200px for rings, right 40px for side legend */}
+        <svg viewBox="0 0 240 200" width="100%" height="100%" overflow="visible" aria-hidden="true">
           <defs>
             <clipPath id={clipId}><circle cx={CX} cy={CY} r={33} /></clipPath>
           </defs>
@@ -282,7 +267,6 @@ export function PlantCard({ plant, onClick }: Props) {
             if (latestValues[key] === undefined) return null;
             const ranges = getMetricRanges(plant.plant_species, key);
             const def    = DEFAULT_RANGES[key] ?? [0, 100];
-            const m      = METRIC_FMT.find(m => m.key === key)!;
             return (
               <ArcRing key={key}
                 value={latestValues[key]}
@@ -291,9 +275,27 @@ export function PlantCard({ plant, onClick }: Props) {
                 hexColor={METRIC_HEX[key]}
                 radius={RING_RADII[idx]}
                 isStale={isStale}
-                label={fmtValue(key, latestValues[key], m.decimals, m.unit)}
-                labelAngle={LABEL_ANGLES_RAD[idx]}
               />
+            );
+          })}
+
+          {/* Right-side legend: color bar + value, one row per ring slot */}
+          {ARC_METRICS.map((key, idx) => {
+            if (latestValues[key] === undefined) return null;
+            const m     = METRIC_FMT.find(m => m.key === key)!;
+            const label = fmtValue(key, latestValues[key], m.decimals, m.unit);
+            const color = METRIC_HEX[key];
+            const ly    = CY + LEGEND_OFFSETS[idx];
+            return (
+              <g key={`legend-${key}`} opacity={isStale ? 0.4 : 1}>
+                <rect x={207} y={ly - 2} width={6} height={4} rx={1} fill={color} opacity={0.85} />
+                <text x={216} y={ly + 1}
+                  textAnchor="start" dominantBaseline="middle"
+                  fontSize="8.5" fontFamily="DM Sans, sans-serif" fontWeight="600"
+                  fill={color}>
+                  {label}
+                </text>
+              </g>
             );
           })}
 
@@ -304,7 +306,7 @@ export function PlantCard({ plant, onClick }: Props) {
             strokeWidth={1}
           />
 
-          {/* Plant photo or initial */}
+          {/* Plant photo or health-colored initial */}
           {plant.photo_url ? (
             <image href={plant.photo_url}
               x={CX - 33} y={CY - 33} width={66} height={66}
@@ -316,7 +318,7 @@ export function PlantCard({ plant, onClick }: Props) {
               textAnchor="middle"
               fontSize="26"
               fontFamily="DM Serif Display, serif"
-              fill="#4ade80"
+              fill={centerHex}
             >
               {plant.name.charAt(0).toUpperCase()}
             </text>
@@ -328,6 +330,25 @@ export function PlantCard({ plant, onClick }: Props) {
           {wateringOverdue && (
             <circle cx={CX - 26} cy={CY - 26} r={5} fill="#14b8a6" />
           )}
+
+          {/* Staleness indicator anchored to the bottom gap of the rings */}
+          {lastReadingTime && (() => {
+            const { text, staleness } = timeAgo(lastReadingTime);
+            const staleHex = staleness === 'fresh' ? '#4ade80'
+                           : staleness === 'stale'  ? '#f59e0b'
+                           : '#ef4444';
+            return (
+              <g>
+                <circle cx={CX - 6} cy={192} r={2.5} fill={staleHex} />
+                <text x={CX - 1} y={192}
+                  textAnchor="start" dominantBaseline="middle"
+                  fontSize="7.5" fontFamily="DM Sans, sans-serif" fontWeight="500"
+                  fill="rgba(255,255,255,0.38)">
+                  {text}
+                </text>
+              </g>
+            );
+          })()}
         </svg>
       </div>
 
@@ -348,16 +369,6 @@ export function PlantCard({ plant, onClick }: Props) {
             ))}
           </div>
         )}
-
-        {lastReadingTime && (() => {
-          const { text, staleness } = timeAgo(lastReadingTime);
-          return (
-            <div className="circle-card-meta">
-              <span className={`staleness-dot ${staleness}`} />
-              <span>{text}</span>
-            </div>
-          );
-        })()}
 
         {!hasAnyData && <span className="circle-card-no-data">no readings yet</span>}
       </div>
