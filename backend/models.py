@@ -84,6 +84,15 @@ class SensorsListResponse(BaseModel):
     count: int
 
 
+class BatteryChangeOut(BaseModel):
+    id: UUID
+    changed_at: datetime
+
+
+class BatteryHistoryResponse(BaseModel):
+    data: list[BatteryChangeOut]
+
+
 class SensorUpdate(BaseModel):
     display_name: Optional[str] = None
     location: Optional[str] = None

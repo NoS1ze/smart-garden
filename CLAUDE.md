@@ -474,3 +474,21 @@ VITE_API_URL=
 - **Backend API**: https://nosizegarden.duckdns.org/api/ — nginx reverse proxy to uvicorn on 127.0.0.1:8000
 - **systemd service**: `smart-garden` — auto-restarts, env from `/opt/smart-garden/backend/.env`
 - **VITE_API_URL**: set automatically by deploy script to `https://$DOMAIN` (no `/api` suffix — code already prepends `/api/`)
+
+## MCP Servers
+
+Three MCP servers are configured for this project:
+
+| Server | Transport | Purpose |
+|--------|-----------|---------|
+| `supabase` | HTTP — `https://mcp.supabase.com/mcp?project_ref=snmhepqybhjuzoavefyr` | Database DDL, SQL queries, migrations |
+| `claude.ai Gmail` | HTTP — `https://gmail.mcp.claude.com/mcp` | Gmail read/draft (not used for this project) |
+| `claude.ai Google Calendar` | HTTP — `https://gcal.mcp.claude.com/mcp` | Calendar (not used for this project) |
+
+### Supabase MCP usage
+- Authenticate once per session: `/mcp` in Claude Code → select supabase → authenticate
+- **DDL operations** (CREATE TABLE, ALTER, indexes): use `mcp__supabase__apply_migration`
+- **Data queries / DML** (SELECT, INSERT, UPDATE, DELETE): use `mcp__supabase__execute_sql`
+- **List tables**: `mcp__supabase__list_tables`
+- **List applied migrations**: `mcp__supabase__list_migrations`
+- Migration files live in `docs/migrations/` — apply them via MCP, not manually in the Supabase dashboard

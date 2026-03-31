@@ -208,6 +208,7 @@ void setup() {
   HTTPClient http;
   String url = String(API_ENDPOINT) + "/api/readings";
   http.begin(client, url);
+  http.setTimeout(10000);  // 10s timeout — prevents infinite hang on bad connection
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(payload);

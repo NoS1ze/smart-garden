@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plant, Reading, WateringSchedule } from '../types';
-import { rawToPercent, timeAgo, getMetricRanges, getOverallHealth, getCalibration } from '../lib/calibration';
+import { rawToPercent, timeAgo, getMetricRanges, getMetricStatus, getCalibration } from '../lib/calibration';
 
 // ─── Explicit hex colors (CSS vars don't resolve in SVG stroke/fill) ──────────
 const METRIC_HEX: Record<string, string> = {
@@ -11,7 +11,7 @@ const METRIC_HEX: Record<string, string> = {
   co2_ppm:       '#a78bfa',  // purple
   tvoc_ppb:      '#f472b6',  // pink
   pressure_hpa:  '#94a3b8',  // slate
-  light_lux:     '#a3e635',  // lime (distinct from amber temperature)
+  light_lux:     '#a3e635',  // lime
 };
 
 // Keep CSS vars for HTML elements (they work fine there)
@@ -25,7 +25,7 @@ const METRIC_CSS: Record<string, string> = {
   light_lux:     'var(--metric-light)',
 };
 
-// ─── Normalization ranges (always use these — species ranges only for highlight) ─
+// ─── Normalization ranges ──────────────────────────────────────────────────────
 const DEFAULT_RANGES: Record<string, [number, number]> = {
   soil_moisture: [0, 100],
   temperature:   [0, 45],
@@ -36,29 +36,117 @@ const DEFAULT_RANGES: Record<string, [number, number]> = {
   pressure_hpa:  [940, 1060],
 };
 
-// ─── Ring config: 4 primary rings, outermost first ──────────────────────────
-const ARC_METRICS  = ['soil_moisture', 'temperature', 'humidity', 'light_lux'];
-const RING_RADII   = [84, 70, 56, 42];
-const RING_STROKE  = 10;
+// ─── Ring config: semicircle arch (180° sweep) ────────────────────────────────
+const ARC_METRICS = ['soil_moisture', 'temperature', 'humidity', 'light_lux'];
 const CX = 100;
-const CY = 100;
-const SWEEP_DEG    = 270;
-const START_ANGLE  = 135; // arc starts bottom-left (7:30), sweeps CW 270° to bottom-right
+const CY = 135;
+const SWEEP_DEG   = 180;
+const START_ANGLE = 180; // start at 9 o'clock, sweep CW to 3 o'clock (upward arch)
 
-// Legend: right-side panel in the 40-unit extension (viewBox 0 0 240 200)
-// 4 rows symmetric around CY=100: y = 76, 92, 108, 124
-const LEGEND_OFFSETS = [-24, -8, 8, 24];
+// Fixed radial bounds (same regardless of ring count)
+const ARCH_OUTER_EDGE = 92.5; // outer edge when 4 rings: r=86 + stroke/2=6.5
+const ARCH_INNER_EDGE = 34.5; // inner edge when 4 rings: r=41 - stroke/2=6.5
+
+// Compute radii + stroke so N rings always fill the same radial space
+function computeRingLayout(n: number): { radii: number[]; stroke: number } {
+  if (n === 0) return { radii: [], stroke: 13 };
+  const gap    = 1.5; // small gap between ring edges
+  const stroke = (ARCH_OUTER_EDGE - ARCH_INNER_EDGE - (n - 1) * gap) / n;
+  const outerR = ARCH_OUTER_EDGE - stroke / 2;
+  const radii  = Array.from({ length: n }, (_, i) => outerR - i * (stroke + gap));
+  return { radii, stroke };
+}
+
+// ─── Metric display labels ─────────────────────────────────────────────────────
+const METRIC_LABELS: Record<string, string> = {
+  soil_moisture: 'SOIL',
+  temperature:   'TEMP',
+  humidity:      'HUM',
+  light_lux:     'LIGHT',
+  co2_ppm:       'CO₂',
+  tvoc_ppb:      'TVOC',
+  pressure_hpa:  'HPA',
+};
+
+// ─── Health indicator ─────────────────────────────────────────────────────────
+type WaterState = 'blue' | 'green' | 'orange' | 'none';
+
+const WATER_HEX: Record<WaterState, string> = {
+  blue:   '#3b82f6',  // overwatered
+  green:  '#22c55e',  // healthy
+  orange: '#f97316',  // underwatered
+  none:   '#4b5563',
+};
+
+// Maps to card border/glow CSS class
+const WATER_CARD_CLASS: Record<WaterState, string> = {
+  blue:   'health-blue',
+  green:  'health-green',
+  orange: 'health-orange',
+  none:   '',
+};
+
+interface HealthIndicator {
+  color: string;
+  line1: string;  // days number or metric name
+  line2: string;  // 'd' or direction ('HIGH'/'LOW')
+  cardClass: string;
+}
+
+function computeWaterState(moisture: number | undefined, species: PlantSpecies | null): WaterState {
+  if (moisture === undefined) return 'none';
+  if (species) {
+    const r = getMetricRanges(species, 'soil_moisture');
+    if (r.optMax != null && moisture > r.optMax) return 'blue';
+    if (r.optMin != null && moisture < r.optMin) return 'orange';
+    return 'green';
+  }
+  // Default thresholds when no species assigned
+  if (moisture > 75) return 'blue';
+  if (moisture < 30) return 'orange';
+  return 'green';
+}
+
+function computeOtherRisk(
+  values: Record<string, number>,
+  species: PlantSpecies | null,
+): { metric: string; dir: string } | null {
+  if (!species) return null;
+  for (const key of ['temperature', 'light_lux']) {
+    if (values[key] === undefined) continue;
+    const { status } = getMetricStatus(values[key], species, key);
+    if (status === 'critical' || status === 'acceptable') {
+      const r = getMetricRanges(species, key);
+      const isHigh = r.optMax != null ? values[key] > r.optMax : false;
+      const label = key === 'temperature' ? 'TEMP' : 'LIGHT';
+      return { metric: label, dir: isHigh ? 'HIGH' : 'LOW' };
+    }
+  }
+  return null;
+}
+
+function computeStreakDays(
+  readings: { value: number; recorded_at: string }[],
+  state: WaterState,
+  species: PlantSpecies | null,
+  rawDry: number,
+  rawWet: number,
+): { days: number; capped: boolean } {
+  if (!readings.length) return { days: 0, capped: false };
+  let oldestMatchIdx = 0;
+  for (let i = 0; i < readings.length; i++) {
+    const moisture = rawToPercent(readings[i].value, rawDry, rawWet);
+    if (computeWaterState(moisture, species) !== state) break;
+    oldestMatchIdx = i;
+  }
+  const startMs = new Date(readings[oldestMatchIdx].recorded_at).getTime();
+  const days = Math.floor((Date.now() - startMs) / 86400000);
+  const capped = oldestMatchIdx === readings.length - 1;
+  return { days, capped };
+}
 
 // Extra metrics shown as pills below (not rings)
 const EXTRA_METRICS = ['co2_ppm', 'tvoc_ppb', 'pressure_hpa'];
-
-// Health color → hex
-const HEALTH_HEX: Record<string, string> = {
-  green: '#22c55e',
-  amber: '#f59e0b',
-  red:   '#ef4444',
-  none:  '#4ade80',
-};
 
 interface Props { plant: Plant; onClick: () => void; }
 
@@ -81,22 +169,22 @@ function fmtValue(key: string, value: number, decimals: number, unit: string): s
 // ─── ArcRing ─────────────────────────────────────────────────────────────────
 interface ArcRingProps {
   value:    number;
-  defMin:   number;   // DEFAULT_RANGES min (normalization scale)
-  defMax:   number;   // DEFAULT_RANGES max
-  specMin:  number | null; // species min/max for range highlight
+  defMin:   number;
+  defMax:   number;
+  specMin:  number | null;
   specMax:  number | null;
   hexColor: string;
   radius:   number;
+  stroke:   number;
   isStale:  boolean;
 }
 
-function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, isStale }: ArcRingProps) {
+function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, stroke, isStale }: ArcRingProps) {
   const circumference = 2 * Math.PI * radius;
   const sweepLen      = circumference * (SWEEP_DEG / 360);
   const normalized    = Math.max(0, Math.min(1, (value - defMin) / (defMax - defMin)));
   const dashFill      = normalized * sweepLen;
 
-  // Species min→max range highlight on track
   let rangeHighlight: React.ReactNode = null;
   if (specMin != null && specMax != null && specMax > specMin) {
     const n0 = Math.max(0, Math.min(1, (specMin - defMin) / (defMax - defMin)));
@@ -108,8 +196,8 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, is
         <circle cx={CX} cy={CY} r={radius}
           fill="none"
           stroke={hexColor}
-          strokeWidth={RING_STROKE}
-          strokeOpacity={0.30}
+          strokeWidth={stroke}
+          strokeOpacity={0.28}
           strokeLinecap="butt"
           strokeDasharray={`${len} ${circumference}`}
           transform={`rotate(${startA} ${CX} ${CY})`}
@@ -120,24 +208,23 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, is
 
   return (
     <g opacity={isStale ? 0.4 : 1}>
-      {/* Track — dim 270° arc */}
+      {/* Track */}
       <circle cx={CX} cy={CY} r={radius}
         fill="none"
         stroke={hexColor}
-        strokeWidth={RING_STROKE}
-        strokeOpacity={0.15}
+        strokeWidth={stroke}
+        strokeOpacity={0.13}
         strokeDasharray={`${sweepLen} ${circumference}`}
         strokeLinecap="round"
         transform={`rotate(${START_ANGLE} ${CX} ${CY})`}
       />
-      {/* Species range highlight */}
       {rangeHighlight}
-      {/* Fill arc */}
+      {/* Fill */}
       {dashFill > 0.5 && (
         <circle cx={CX} cy={CY} r={radius}
           fill="none"
           stroke={hexColor}
-          strokeWidth={RING_STROKE}
+          strokeWidth={stroke}
           strokeDasharray={`${dashFill} ${circumference}`}
           strokeLinecap="round"
           transform={`rotate(${START_ANGLE} ${CX} ${CY})`}
@@ -154,6 +241,7 @@ export function PlantCard({ plant, onClick }: Props) {
   const [lastReadingTime, setLastReadingTime] = useState<string | null>(null);
   const [needsAttention,  setNeedsAttention]  = useState(false);
   const [wateringOverdue, setWateringOverdue] = useState(false);
+  const [healthIndicator, setHealthIndicator] = useState<HealthIndicator | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -196,6 +284,37 @@ export function PlantCard({ plant, onClick }: Props) {
         }
         setLatestValues(values);
         setLastReadingTime(latestTime);
+
+        // Compute health indicator
+        const otherRisk = computeOtherRisk(values, plant.plant_species ?? null);
+        if (otherRisk) {
+          setHealthIndicator({
+            color: '#ef4444',
+            line1: otherRisk.metric,
+            line2: otherRisk.dir,
+            cardClass: 'health-red',
+          });
+        } else {
+          const waterState = computeWaterState(values.soil_moisture, plant.plant_species ?? null);
+          if (waterState !== 'none') {
+            // Fetch soil history to compute streak
+            const { data: soilHist } = await supabase
+              .from('readings').select('value, recorded_at')
+              .in('sensor_id', sensorIds).eq('metric', 'soil_moisture')
+              .order('recorded_at', { ascending: false }).limit(250);
+
+            const streak = computeStreakDays(soilHist ?? [], waterState, plant.plant_species ?? null, rawDry, rawWet);
+            const daysStr = streak.capped ? `>${streak.days}` : `${streak.days}`;
+            setHealthIndicator({
+              color: WATER_HEX[waterState],
+              line1: daysStr,
+              line2: '',
+              cardClass: WATER_CARD_CLASS[waterState],
+            });
+          } else {
+            setHealthIndicator(null);
+          }
+        }
       }
 
       const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -235,9 +354,6 @@ export function PlantCard({ plant, onClick }: Props) {
   }, [plant.id, plant.soil_type, plant.reference_plant_id]);
 
   const isStale     = lastReadingTime ? timeAgo(lastReadingTime).staleness === 'dead' : false;
-  const healthColor = getOverallHealth(latestValues, plant.plant_species,
-    ARC_METRICS.filter(k => latestValues[k] !== undefined));
-  const centerHex   = HEALTH_HEX[healthColor] ?? HEALTH_HEX.none;
 
   const extraMetrics = EXTRA_METRICS.flatMap(key => {
     if (latestValues[key] === undefined) return [];
@@ -245,26 +361,78 @@ export function PlantCard({ plant, onClick }: Props) {
     return [{ key, label: fmtValue(key, latestValues[key], m.decimals, m.unit) }];
   });
 
-  const hasAnyData = ARC_METRICS.some(k => latestValues[k] !== undefined) || extraMetrics.length > 0;
+  const availRingMetrics = ARC_METRICS.filter(k => latestValues[k] !== undefined);
+  const { radii, stroke: ringStroke } = computeRingLayout(availRingMetrics.length);
+
+  const hasAnyData = availRingMetrics.length > 0 || extraMetrics.length > 0;
   const clipId     = `clip-${plant.id.replace(/-/g, '')}`;
 
   const cardClasses = ['plant-circle-card',
     needsAttention && 'attention',
-    healthColor !== 'none' && `health-${healthColor}`,
+    healthIndicator?.cardClass || null,
   ].filter(Boolean).join(' ');
 
   return (
     <div className={cardClasses} onClick={onClick}>
       <div className="arc-rings-container">
-        {/* viewBox 240×200: left 200px for rings, right 40px for side legend */}
-        <svg viewBox="0 0 240 200" width="100%" height="100%" overflow="visible" aria-hidden="true">
-          <defs>
-            <clipPath id={clipId}><circle cx={CX} cy={CY} r={33} /></clipPath>
-          </defs>
+        {/* viewBox 200×140: photo background, arch at CY=135, health indicator in center */}
+        <svg viewBox="0 0 200 140" width="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
 
-          {/* Rings — only for metrics with data */}
-          {ARC_METRICS.map((key, idx) => {
-            if (latestValues[key] === undefined) return null;
+          {/* ClipPath: upper semicircle matching ARCH_INNER_EDGE exactly */}
+          {healthIndicator && (
+            <defs>
+              <clipPath id={`hi-${clipId}`}>
+                <rect x={CX - ARCH_INNER_EDGE} y={CY - ARCH_INNER_EDGE}
+                      width={ARCH_INNER_EDGE * 2} height={ARCH_INNER_EDGE} />
+              </clipPath>
+            </defs>
+          )}
+
+          {/* Photo as full background */}
+          {plant.photo_url && (
+            <>
+              <image href={plant.photo_url} x={0} y={0} width={200} height={140}
+                preserveAspectRatio="xMidYMid slice" />
+              <rect x={0} y={0} width={200} height={140} fill="rgba(8,18,10,0.70)" />
+            </>
+          )}
+
+          {/* Health indicator fill — circle clipped to upper semicircle + rect to fill viewBox bottom strip */}
+          {healthIndicator && (
+            <>
+              <circle cx={CX} cy={CY} r={ARCH_INNER_EDGE}
+                fill={healthIndicator.color}
+                clipPath={`url(#hi-${clipId})`} />
+              <rect x={CX - ARCH_INNER_EDGE} y={CY}
+                width={ARCH_INNER_EDGE * 2} height={140 - CY}
+                fill={healthIndicator.color} />
+            </>
+          )}
+
+          {/* Plant name — top-left */}
+          <text x="10" y="18"
+            fontFamily="DM Sans, sans-serif" fontSize="13" fontWeight="800"
+            fill="rgba(255,255,255,0.92)">
+            {plant.name}
+          </text>
+
+          {/* Last reading time — top-right */}
+          {lastReadingTime && (() => {
+            const { text, staleness } = timeAgo(lastReadingTime);
+            const compact = text.replace(/ ago$/, '').replace('Just now', 'now');
+            const fill = staleness === 'fresh' ? '#4ade80' : staleness === 'stale' ? '#f59e0b' : '#ef4444';
+            return (
+              <text x="190" y="18"
+                textAnchor="end"
+                fontFamily="DM Sans, sans-serif" fontSize="9.5" fontWeight="500"
+                fill={fill}>
+                {compact}
+              </text>
+            );
+          })()}
+
+          {/* Arc rings — N rings scale to fill the same radial space */}
+          {availRingMetrics.map((key, i) => {
             const ranges = getMetricRanges(plant.plant_species, key);
             const def    = DEFAULT_RANGES[key] ?? [0, 100];
             return (
@@ -273,105 +441,81 @@ export function PlantCard({ plant, onClick }: Props) {
                 defMin={def[0]} defMax={def[1]}
                 specMin={ranges.min} specMax={ranges.max}
                 hexColor={METRIC_HEX[key]}
-                radius={RING_RADII[idx]}
+                radius={radii[i]}
+                stroke={ringStroke}
                 isStale={isStale}
               />
             );
           })}
 
-          {/* Right-side legend: color bar + value, one row per ring slot */}
-          {ARC_METRICS.map((key, idx) => {
-            if (latestValues[key] === undefined) return null;
-            const m     = METRIC_FMT.find(m => m.key === key)!;
-            const label = fmtValue(key, latestValues[key], m.decimals, m.unit);
-            const color = METRIC_HEX[key];
-            const ly    = CY + LEGEND_OFFSETS[idx];
-            return (
-              <g key={`legend-${key}`} opacity={isStale ? 0.4 : 1}>
-                <rect x={207} y={ly - 2} width={6} height={4} rx={1} fill={color} opacity={0.85} />
-                <text x={216} y={ly + 1}
-                  textAnchor="start" dominantBaseline="middle"
-                  fontSize="8.5" fontFamily="DM Sans, sans-serif" fontWeight="600"
-                  fill={color}>
-                  {label}
+          {/* Alert dots */}
+          {needsAttention && <circle cx={CX + 22} cy={68} r={4} fill="#ef4444" />}
+          {wateringOverdue && <circle cx={CX - 22} cy={68} r={4} fill="#14b8a6" />}
+
+          {/* Health indicator text — rendered on top of rings */}
+          {healthIndicator && (
+            healthIndicator.line2 ? (
+              // Two-line risk label (e.g. TEMP / HIGH)
+              <>
+                <text x={CX} y={113}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="9.5" fontWeight="700" fontFamily="DM Sans, sans-serif"
+                  fill="rgba(0,0,0,0.82)">
+                  {healthIndicator.line1}
                 </text>
-              </g>
-            );
-          })}
-
-          {/* Center circle backdrop */}
-          <circle cx={CX} cy={CY} r={34}
-            fill="#131c15"
-            stroke="rgba(255,255,255,0.08)"
-            strokeWidth={1}
-          />
-
-          {/* Plant photo or health-colored initial */}
-          {plant.photo_url ? (
-            <image href={plant.photo_url}
-              x={CX - 33} y={CY - 33} width={66} height={66}
-              clipPath={`url(#${clipId})`}
-              preserveAspectRatio="xMidYMid slice"
-            />
-          ) : (
-            <text x={CX} y={CY + 9}
-              textAnchor="middle"
-              fontSize="26"
-              fontFamily="DM Serif Display, serif"
-              fill={centerHex}
-            >
-              {plant.name.charAt(0).toUpperCase()}
-            </text>
-          )}
-
-          {needsAttention && (
-            <circle cx={CX + 26} cy={CY - 26} r={5} fill="#ef4444" />
-          )}
-          {wateringOverdue && (
-            <circle cx={CX - 26} cy={CY - 26} r={5} fill="#14b8a6" />
-          )}
-
-          {/* Staleness indicator anchored to the bottom gap of the rings */}
-          {lastReadingTime && (() => {
-            const { text, staleness } = timeAgo(lastReadingTime);
-            const staleHex = staleness === 'fresh' ? '#4ade80'
-                           : staleness === 'stale'  ? '#f59e0b'
-                           : '#ef4444';
-            return (
-              <g>
-                <circle cx={CX - 6} cy={192} r={2.5} fill={staleHex} />
-                <text x={CX - 1} y={192}
-                  textAnchor="start" dominantBaseline="middle"
-                  fontSize="7.5" fontFamily="DM Sans, sans-serif" fontWeight="500"
-                  fill="rgba(255,255,255,0.38)">
-                  {text}
+                <text x={CX} y={124}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="9.5" fontWeight="700" fontFamily="DM Sans, sans-serif"
+                  fill="rgba(0,0,0,0.82)">
+                  {healthIndicator.line2.toUpperCase()}
                 </text>
-              </g>
-            );
-          })()}
+              </>
+            ) : (
+              // Single large number (water state days)
+              <text x={CX} y={119}
+                textAnchor="middle" dominantBaseline="middle"
+                fontSize="18" fontWeight="800" fontFamily="DM Sans, sans-serif"
+                fill="rgba(0,0,0,0.82)">
+                {healthIndicator.line1}
+              </text>
+            )
+          )}
         </svg>
       </div>
 
-      <div className="circle-card-info">
-        <h3 className="circle-card-name">{plant.name}</h3>
-        {plant.plant_species && (
-          <p className="circle-card-species">{plant.plant_species.name}</p>
-        )}
+      {/* 4-column metric row */}
+      {hasAnyData && (
+        <div className="card-metrics-row">
+          {ARC_METRICS.filter(k => latestValues[k] !== undefined).map((key) => {
+            const m = METRIC_FMT.find(m => m.key === key)!;
+            const label = fmtValue(key, latestValues[key], m.decimals, m.unit);
+            return (
+              <div key={key} className="card-metric-col">
+                <span className="metric-col-dot" style={{ background: METRIC_HEX[key] }} />
+                <span className="metric-col-value" style={{ color: METRIC_HEX[key] }}>{label}</span>
+                <span className="metric-col-label">{METRIC_LABELS[key] ?? key}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-        {/* Extra metrics not in rings (CO₂, TVOC, pressure) */}
-        {extraMetrics.length > 0 && (
-          <div className="circle-card-metrics">
-            {extraMetrics.map(({ key, label }) => (
-              <span key={key} className="circle-metric-pill"
-                style={{ '--pill-color': METRIC_CSS[key] } as React.CSSProperties}>
-                <span className="pill-dot" />{label}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {!hasAnyData && <span className="circle-card-no-data">no readings yet</span>}
-      </div>
+      {/* Extra metrics pills (CO₂, TVOC, pressure) + no-data fallback */}
+      {(extraMetrics.length > 0 || !hasAnyData) && (
+        <div className="circle-card-info">
+          {extraMetrics.length > 0 && (
+            <div className="circle-card-metrics">
+              {extraMetrics.map(({ key, label }) => (
+                <span key={key} className="circle-metric-pill"
+                  style={{ '--pill-color': METRIC_CSS[key] } as React.CSSProperties}>
+                  <span className="pill-dot" />{label}
+                </span>
+              ))}
+            </div>
+          )}
+          {!hasAnyData && <span className="circle-card-no-data">no readings yet</span>}
+        </div>
+      )}
     </div>
   );
 }

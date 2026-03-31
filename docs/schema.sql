@@ -92,6 +92,12 @@ create table if not exists sensor_plant (
   primary key (sensor_id, plant_id)
 );
 
+create table if not exists battery_changes (
+  id         uuid primary key default gen_random_uuid(),
+  sensor_id  uuid not null references sensors(id) on delete cascade,
+  changed_at timestamptz not null default now()
+);
+
 -- Indexes for common query patterns
 create index if not exists readings_sensor_metric_time on readings (sensor_id, metric, recorded_at desc);
 create index if not exists alerts_sensor_active on alerts (sensor_id, active);

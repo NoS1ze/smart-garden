@@ -37,6 +37,8 @@ from models import (
     SensorAssociate,
     SensorOut,
     SensorUpdate,
+    BatteryChangeOut,
+    BatteryHistoryResponse,
     SensorsListResponse,
     SoilTypeCreate,
     SoilTypeOut,
@@ -432,15 +434,33 @@ async def update_sensor(request: Request, sensor_id: UUID, body: SensorUpdate):
 @limiter.limit("20/minute")
 @app.post("/api/sensors/{sensor_id}/battery", response_model=SensorOut)
 async def mark_battery_changed(request: Request, sensor_id: UUID):
+    now = datetime.utcnow().isoformat()
     result = (
         supabase.table("sensors")
-        .update({"battery_changed_at": datetime.utcnow().isoformat()})
+        .update({"battery_changed_at": now})
         .eq("id", str(sensor_id))
         .execute()
     )
     if not result.data:
         raise HTTPException(status_code=404, detail="Sensor not found")
+    # Append to history — preserves all past change dates
+    supabase.table("battery_changes").insert({
+        "sensor_id": str(sensor_id),
+        "changed_at": now,
+    }).execute()
     return _enrich_sensor(result.data[0])
+
+
+@app.get("/api/sensors/{sensor_id}/battery-history", response_model=BatteryHistoryResponse)
+async def get_battery_history(sensor_id: UUID):
+    result = (
+        supabase.table("battery_changes")
+        .select("id, changed_at")
+        .eq("sensor_id", str(sensor_id))
+        .order("changed_at", desc=True)
+        .execute()
+    )
+    return {"data": result.data}
 
 
 @limiter.limit("20/minute")

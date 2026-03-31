@@ -508,17 +508,19 @@ h1, h2, h3 {
    ==================================================== */
 
 .plant-circle-card {
+  container-type: inline-size;
   background: var(--bg-card);
   border: 1px solid var(--bg-glass-border);
-  border-radius: 20px;
-  padding: 18px 12px 14px;
+  border-radius: 22px;
+  padding: 14px 14px 18px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   position: relative;
+  overflow: hidden;
 }
 
 .plant-circle-card:hover {
@@ -530,6 +532,16 @@ h1, h2, h3 {
 .plant-circle-card.health-green {
   border-color: rgba(34, 197, 94, 0.22);
   box-shadow: 0 0 24px rgba(34, 197, 94, 0.07);
+}
+
+.plant-circle-card.health-blue {
+  border-color: rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.08);
+}
+
+.plant-circle-card.health-orange {
+  border-color: rgba(249, 115, 22, 0.25);
+  box-shadow: 0 0 24px rgba(249, 115, 22, 0.08);
 }
 
 .plant-circle-card.health-amber {
@@ -546,21 +558,120 @@ h1, h2, h3 {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
-/* SVG arc rings container — 240×200 viewBox rendered at 172px height → 206px wide */
+/* SVG arc rings container — 200×140 viewBox, semicircle arch */
 .arc-rings-container {
-  width: 206px;
-  height: 172px;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 200 / 140;
   flex-shrink: 0;
+  margin-bottom: 2px;
 }
 
-/* Gentle glow on the SVG when health is critical */
+
+/* Gentle glow on the SVG when health indicates a state */
 .plant-circle-card.health-red .arc-rings-container svg {
   filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.15));
 }
 
-.plant-circle-card.health-amber .arc-rings-container svg {
-  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.12));
+.plant-circle-card.health-orange .arc-rings-container svg {
+  filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.12));
 }
+
+.plant-circle-card.health-blue .arc-rings-container svg {
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.10));
+}
+
+/* Metric columns row */
+.card-metrics-row {
+  display: flex;
+  width: 100%;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 0;
+  margin-bottom: 10px;
+}
+
+.card-metric-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px;
+}
+
+.card-metric-col + .card-metric-col {
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+
+.metric-col-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.metric-col-value {
+  font-size: clamp(13px, 5.5cqi, 20px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.metric-col-label {
+  font-size: clamp(7px, 2.8cqi, 10px);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.38);
+  text-transform: uppercase;
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* Staleness line */
+.card-staleness {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.42);
+  font-family: 'DM Sans', sans-serif;
+  margin-bottom: 4px;
+}
+
+.stale-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Health badge */
+.health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  border-radius: 100px;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: rgba(255,255,255,0.82);
+  font-family: 'DM Sans', sans-serif;
+  margin-top: 8px;
+}
+
+.health-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.health-badge-green .health-badge-dot { background: #22c55e; }
+.health-badge-amber .health-badge-dot { background: #f59e0b; }
+.health-badge-red   .health-badge-dot { background: #ef4444; }
+.health-badge-none  .health-badge-dot { background: rgba(255,255,255,0.3); }
 
 /* Info section beneath rings */
 .circle-card-info {
@@ -569,20 +680,20 @@ h1, h2, h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 
 .circle-card-name {
   font-family: 'DM Serif Display', serif;
-  font-size: 15px;
-  font-weight: 400;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
-  line-height: 1.3;
+  line-height: 1.2;
 }
 
 .circle-card-species {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   font-style: italic;
   margin: 0;
