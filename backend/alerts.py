@@ -9,6 +9,7 @@ from sendgrid.helpers.mail import Mail
 from database import supabase
 
 ALERT_COOLDOWN_MINUTES = int(os.getenv("ALERT_COOLDOWN_MINUTES", "60"))
+STALE_SENSOR_DAYS = float(os.getenv("STALE_SENSOR_DAYS", "2"))
 
 
 def _send_email(to_email: str, subject: str, body: str) -> None:
@@ -89,9 +90,8 @@ def _get_soil_calibration(sensor_id: str) -> tuple[int, int]:
     return raw_dry, raw_wet
 
 
-def _dispatch_to_channels(subject: str, body: str) -> None:
+async def _dispatch_to_channels(subject: str, body: str) -> None:
     """Send alert to all enabled notification channels."""
-    import asyncio
     from notifiers import send_notification
 
     channels_result = (
@@ -101,20 +101,10 @@ def _dispatch_to_channels(subject: str, body: str) -> None:
         .execute()
     )
     for ch in (channels_result.data or []):
-        try:
-            asyncio.get_event_loop().run_until_complete(
-                send_notification(ch["channel_type"], ch["config"], subject, body)
-            )
-        except RuntimeError:
-            # If no event loop or already running, create a new one
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(
-                send_notification(ch["channel_type"], ch["config"], subject, body)
-            )
-            loop.close()
+        await send_notification(ch["channel_type"], ch["config"], subject, body)
 
 
-def check_alerts(sensor_id: str, readings: list[dict]) -> int:
+async def check_alerts(sensor_id: str, readings: list[dict]) -> int:
     """Check active alerts for the given sensor and readings.
 
     Returns the number of alerts triggered (emails sent).
@@ -181,7 +171,7 @@ def check_alerts(sensor_id: str, readings: list[dict]) -> int:
             _send_email(rule["email"], subject, body)
 
             # Dispatch to all enabled notification channels
-            _dispatch_to_channels(subject, body)
+            await _dispatch_to_channels(subject, body)
 
             # Record in alert_history
             supabase.table("alert_history").insert({
@@ -193,3 +183,49 @@ def check_alerts(sensor_id: str, readings: list[dict]) -> int:
             triggered += 1
 
     return triggered
+
+
+async def check_stale_sensors() -> int:
+    """Notify once per outage for any sensor that hasn't reported in
+    STALE_SENSOR_DAYS — likely a dead battery or a WiFi/power issue.
+
+    Unlike check_alerts (triggered by an incoming reading), this has to be
+    called on a schedule, since a silent sensor by definition never POSTs.
+    Returns the number of notifications sent.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=STALE_SENSOR_DAYS)).isoformat()
+
+    result = (
+        supabase.table("sensors")
+        .select("id, mac_address, display_name, last_seen_at, created_at, last_stale_notified_at")
+        .execute()
+    )
+
+    notified = 0
+    for sensor in (result.data or []):
+        last_seen = sensor.get("last_seen_at") or sensor.get("created_at")
+        if not last_seen or last_seen >= cutoff:
+            continue  # reported recently enough, or too new to judge
+
+        # Already notified for this outage — only re-notify once the sensor
+        # reports again (last_seen moves past the last notification) and
+        # then goes stale a second time.
+        last_notified = sensor.get("last_stale_notified_at")
+        if last_notified and last_notified >= last_seen:
+            continue
+
+        name = sensor.get("display_name") or sensor.get("mac_address") or sensor["id"]
+        subject = f"Smart Garden: {name} hasn't reported in {STALE_SENSOR_DAYS:.0f}+ days"
+        body = (
+            f"Sensor {name} (MAC {sensor.get('mac_address')}) last reported at "
+            f"{last_seen}. This usually means the battery has died or it lost WiFi — "
+            f"check it when you get a chance."
+        )
+        await _dispatch_to_channels(subject, body)
+
+        supabase.table("sensors").update({
+            "last_stale_notified_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", sensor["id"]).execute()
+        notified += 1
+
+    return notified

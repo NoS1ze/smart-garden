@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -11,7 +14,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from alerts import check_alerts
+from alerts import check_alerts, check_stale_sensors
 from auth import optional_user
 from database import supabase
 from models import (
@@ -75,6 +78,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STALE_CHECK_INTERVAL_HOURS = float(os.getenv("STALE_CHECK_INTERVAL_HOURS", "6"))
+
+
+@app.on_event("startup")
+async def _start_stale_sensor_checker():
+    async def _loop():
+        while True:
+            try:
+                await check_stale_sensors()
+            except Exception:
+                logging.exception("stale sensor check failed")
+            await asyncio.sleep(STALE_CHECK_INTERVAL_HOURS * 3600)
+    asyncio.create_task(_loop())
 
 
 def _update_watering_schedules(plant_id: str) -> None:
@@ -246,7 +263,7 @@ async def create_readings(request: Request, body: ReadingsCreate):
         if soil_reading:
             prev_soil_raw = soil_reading.value
 
-        alerts_triggered += check_alerts(
+        alerts_triggered += await check_alerts(
             sensor_id,
             [{"metric": r.metric.value, "value": r.value} for r in entry_readings],
         )
@@ -468,6 +485,13 @@ async def mark_battery_changed(request: Request, sensor_id: UUID):
         "changed_at": now,
     }).execute()
     return _enrich_sensor(result.data[0])
+
+
+@app.post("/api/sensors/check-stale", response_model=StatusResponse)
+async def trigger_stale_sensor_check():
+    """Manually run the stale-sensor check (normally runs on a timer). Useful for testing."""
+    notified = await check_stale_sensors()
+    return StatusResponse(status=f"checked, {notified} notification(s) sent")
 
 
 @app.get("/api/sensors/{sensor_id}/battery-history", response_model=BatteryHistoryResponse)
