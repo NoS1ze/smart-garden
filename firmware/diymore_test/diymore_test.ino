@@ -47,6 +47,7 @@ void setup() {
   analogReadResolution(12);
   analogSetPinAttenuation(SOIL_PIN_A, ADC_11db);
   analogSetPinAttenuation(SOIL_PIN_B, ADC_11db);
+  analogSetPinAttenuation(35, ADC_11db);
 
   // DHT
   dht.begin();
@@ -95,6 +96,7 @@ void loop() {
   int chosenPin = (avgA >= avgB) ? SOIL_PIN_A : SOIL_PIN_B;
   Serial.printf("  Soil GPIO32: %d  |  GPIO33: %d  →  using GPIO%d = %d\n",
                 avgA, avgB, chosenPin, chosen);
+  Serial.printf("  Soil GPIO35 (ext): %d\n", analogRead(35));
 
   // DHT11
   float temp = dht.readTemperature();
