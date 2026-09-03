@@ -258,10 +258,10 @@ async def check_stale_sensors() -> int:
             last_seen_str = last_seen
             days_missing = int(STALE_SENSOR_DAYS)
 
-        subject = f"Smart Garden: {label}{location} — no reading in {days_missing}+ days"
+        subject = f"Smart Garden: {label}{location} hasn't reported"
         body = (
-            f"{label}{location} hasn't sent a reading since {last_seen_str} "
-            f"({days_missing} days ago). Battery may be dead or it's lost WiFi.\n\n"
+            f"Last reading: {last_seen_str} ({days_missing} days ago). "
+            f"Battery may be dead or it's lost WiFi.\n\n"
             f"MAC: {sensor.get('mac_address')}"
         )
         await _dispatch_to_channels(subject, body)
