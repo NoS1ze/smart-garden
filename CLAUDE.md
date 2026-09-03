@@ -415,14 +415,25 @@ VITE_API_URL=
 - [x] Firmware: `firmware/diymore_test/` test sketch for hardware debugging (no WiFi/sleep, loops all sensors every 2s)
 - [x] Frontend: plant cards redesigned to circular SVG arc-ring dials (Red Dot Award aesthetic) — 4 concentric rings (soil, temp, humidity, light), species range highlight, per-metric hex colors
 - [x] Frontend: plant card UX pass — side legend panel (viewBox 240×200, values in right column), health-colored center initial, staleness dot anchored to arc gap, lime color for light_lux (#a3e635), ring radii [84,70,56,42], stroke 10
-- [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out)
-- [ ] DIY MORE #2 (BC:3B:BC): soil reads ~650 in air (should be ~3430) — confirmed PCB trace defect on GPIO32, not a power issue; fix is external sensor on GPIO35 with `SOIL_PIN 35` in config.h
+- [x] Battery optimization: daily-batching firmware for all 3 boards — sensors still read hourly, but readings buffer in RTC memory (ESP8266 user memory / ESP32 `RTC_DATA_ATTR`) and only trigger one WiFi connect + POST per ~24h instead of every wake. See `docs/battery-investigation.md` for the analysis (est. ~13.5 mAh/day → ~1.8 mAh/day, ~60 days → ~450 days runtime). Backend `POST /api/readings` accepts a new `batch: [{recorded_at, readings}]` array alongside the old single-shot shape — old firmware still works unchanged. Trade-off: alerts can lag up to ~24h since checks only run when a batch lands.
+- [x] DIY MORE #2 (34:98:7A:BC:3B:AC) reflashed with daily-batching firmware 2026-09-02 — confirmed via serial: reads sensors hourly, no WiFi until buffer fills. Also stopped its WiFi-init brownout crash-loop as a side effect (WiFi radio now only touches power on 1/24 wakes).
+- [ ] Reflash remaining 3 boards (NodeMCU+HTU21D/BH1750, NodeMCU+ENS160/AHT21, DIY MORE #1/#3/#4) with the same daily-batching firmware — planned for 2026-09-04 from a different laptop. That laptop needs `arduino-cli` cores + libraries installed fresh (see Firmware Deployment section below) before compiling.
+- [ ] ENS160 (NodeMCU CO2 board): reflash with AHT21 compensation + status logging, then leave powered 48hrs for self-calibration — CO2 stopped sending because sensor lost power and entered INITIAL_STARTUP mode (getEco2() returns 0, filtered out). Note: the currently-published `ScioSense_ENS16x` library no longer has `set_envdata()`/`getAQIS()` — the firmware now uses `writeCompensation()`/`getDeviceStatus()` instead; if a fresh install pulls an older/newer library version, check the API still matches.
+- [ ] DIY MORE #2 soil sensor hardware defect (separate from the firmware reflash above): reads ~650 in air (should be ~3430) — confirmed PCB trace defect on GPIO32, not a power issue; fix is external sensor on GPIO35 with `SOIL_PIN 35` in config.h (not yet applied)
 - [ ] Google Home (future)
 
 ## Firmware Deployment
 - `arduino-cli` is installed via Homebrew (`/opt/homebrew/bin/arduino-cli`)
 - Cores installed: `esp8266:esp8266` v3.1.2, `esp32:esp32` v3.0.7
 - `config.h` lives in each sketch directory (gitignored) — contains WiFi creds, API endpoint, sleep interval
+- **On a fresh machine**, install cores + libraries before compiling:
+  ```
+  arduino-cli core update-index --additional-urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+  arduino-cli core install esp8266:esp8266 --additional-urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+  arduino-cli core install esp32:esp32
+  arduino-cli lib install "NTPClient" "ArduinoJson" "SparkFun HTU21D Humidity and Temperature Sensor Breakout" "BH1750" "Adafruit AHTX0" "ScioSense_ENS16x" "DHT sensor library" "Adafruit Unified Sensor"
+  ```
+  Then `config.h` still needs to be created per sketch from `config.h.example` (gitignored, has WiFi creds — not in git history).
 
 ### NodeMCU + HTU21D + BH1750 (ESP8266)
 - Port: `/dev/cu.wchusbserial110` (may vary — check `ls /dev/cu.wch*`)
@@ -461,6 +472,7 @@ VITE_API_URL=
 ## Notes
 - NodeMCU sensor MAC: 8C:CE:4E:CE:66:15 (UUID: cd4d94f1-7ab2-42be-8b42-063aea049f49)
 - DIY MORE sensor MAC: 08:B6:1F:8E:C7:E0 (auto-registers on first POST)
+- DIY MORE #2 sensor MAC: 34:98:7A:BC:3B:AC (already on daily-batching firmware as of 2026-09-02)
 - Supabase project ref: snmhepqybhjuzoavefyr
 - Alert deletion uses DELETE /api/alerts/{id} — frontend calls backend, NOT Supabase directly
 - POST /api/readings now uses "mac" field instead of "sensor_id" — breaking change, firmware already reflashed
