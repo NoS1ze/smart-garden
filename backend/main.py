@@ -1102,12 +1102,34 @@ async def delete_watering_schedule(request: Request, schedule_id: UUID):
 
 # ── Notification Channels ─────────────────────────────
 
+# Config keys that hold a live credential, per channel type — masked in any
+# API response. The real values are still used internally (dispatch reads
+# straight from the DB), only what's sent back over HTTP is redacted.
+_SENSITIVE_CONFIG_KEYS = {
+    "telegram": {"bot_token"},
+    "discord": {"webhook_url"},
+    "webhook": {"secret"},
+}
+
+
+def _redact_channel(row: dict) -> dict:
+    row = dict(row)
+    config = dict(row.get("config") or {})
+    for key in _SENSITIVE_CONFIG_KEYS.get(row.get("channel_type"), set()):
+        value = config.get(key)
+        if value:
+            tail = str(value)[-4:] if len(str(value)) > 4 else ""
+            config[key] = f"••••••••{tail}"
+    row["config"] = config
+    return row
+
 
 @app.get("/api/notification-channels")
 @limiter.limit("60/minute")
 async def list_notification_channels(request: Request):
     res = supabase.table("notification_channels").select("*").order("created_at").execute()
-    return {"data": res.data, "count": len(res.data)}
+    data = [_redact_channel(row) for row in res.data]
+    return {"data": data, "count": len(data)}
 
 
 @app.post("/api/notification-channels", status_code=201)
@@ -1119,7 +1141,7 @@ async def create_notification_channel(body: NotificationChannelCreate, request: 
         "enabled": body.enabled,
     }
     res = supabase.table("notification_channels").insert(row).execute()
-    return res.data[0]
+    return _redact_channel(res.data[0])
 
 
 @app.put("/api/notification-channels/{channel_id}")
@@ -1131,7 +1153,7 @@ async def update_notification_channel(channel_id: UUID, body: NotificationChanne
     res = supabase.table("notification_channels").update(updates).eq("id", str(channel_id)).execute()
     if not res.data:
         raise HTTPException(404, "Channel not found")
-    return res.data[0]
+    return _redact_channel(res.data[0])
 
 
 @app.delete("/api/notification-channels/{channel_id}")
