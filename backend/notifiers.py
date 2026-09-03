@@ -67,12 +67,18 @@ async def _send_telegram(config: dict, subject: str, body: str) -> bool:
     text = f"*{subject}*\n{body}"
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+    }
+    # Forum-enabled supergroups route messages by topic; without this a bot
+    # message lands in "General" instead of the topic the channel is for.
+    if config.get("message_thread_id"):
+        payload["message_thread_id"] = config["message_thread_id"]
+
     async with httpx.AsyncClient() as client:
-        resp = await client.post(url, json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-        })
+        resp = await client.post(url, json=payload)
         return resp.status_code == 200
 
 
