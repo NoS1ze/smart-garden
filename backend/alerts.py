@@ -186,8 +186,9 @@ async def check_alerts(sensor_id: str, readings: list[dict]) -> int:
 
 
 async def check_stale_sensors() -> int:
-    """Notify once per outage for any sensor that hasn't reported in
-    STALE_SENSOR_DAYS — likely a dead battery or a WiFi/power issue.
+    """Notify once per outage for any plant-associated sensor that hasn't
+    reported in STALE_SENSOR_DAYS — likely a dead battery or a WiFi/power
+    issue. Sensors not tracking a plant are ignored entirely.
 
     Unlike check_alerts (triggered by an incoming reading), this has to be
     called on a schedule, since a silent sensor by definition never POSTs.
@@ -214,12 +215,54 @@ async def check_stale_sensors() -> int:
         if last_notified and last_notified >= last_seen:
             continue
 
-        name = sensor.get("display_name") or sensor.get("mac_address") or sensor["id"]
-        subject = f"Smart Garden: {name} hasn't reported in {STALE_SENSOR_DAYS:.0f}+ days"
+        # Only care about sensors actually tracking a plant
+        assoc = (
+            supabase.table("sensor_plant")
+            .select("plant_id")
+            .eq("sensor_id", sensor["id"])
+            .limit(1)
+            .execute()
+        )
+        if not assoc.data:
+            continue
+        plant_id = assoc.data[0]["plant_id"]
+
+        plant = (
+            supabase.table("plants")
+            .select("name, room_id")
+            .eq("id", plant_id)
+            .maybe_single()
+            .execute()
+        )
+        plant_name = plant.data.get("name") if plant.data else None
+        room_name = None
+        room_id = plant.data.get("room_id") if plant.data else None
+        if room_id:
+            room = (
+                supabase.table("rooms")
+                .select("name")
+                .eq("id", room_id)
+                .maybe_single()
+                .execute()
+            )
+            room_name = room.data.get("name") if room.data else None
+
+        label = plant_name or sensor.get("display_name") or sensor.get("mac_address")
+        location = f" in {room_name}" if room_name else ""
+
+        try:
+            last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+            last_seen_str = last_seen_dt.strftime("%Y-%m-%d %H:%M UTC")
+            days_missing = (datetime.now(timezone.utc) - last_seen_dt).days
+        except ValueError:
+            last_seen_str = last_seen
+            days_missing = int(STALE_SENSOR_DAYS)
+
+        subject = f"Smart Garden: {label}{location} — no reading in {days_missing}+ days"
         body = (
-            f"Sensor {name} (MAC {sensor.get('mac_address')}) last reported at "
-            f"{last_seen}. This usually means the battery has died or it lost WiFi — "
-            f"check it when you get a chance."
+            f"{label}{location} hasn't sent a reading since {last_seen_str} "
+            f"({days_missing} days ago). Battery may be dead or it's lost WiFi.\n\n"
+            f"MAC: {sensor.get('mac_address')}"
         )
         await _dispatch_to_channels(subject, body)
 
