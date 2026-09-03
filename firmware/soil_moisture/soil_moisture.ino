@@ -2,6 +2,12 @@
  * Smart Garden - NodeMCU V3 (ESP8266) Sensor Board
  * Sensors: Capacitive Soil Moisture v2.0 + HTU21D + BH1750
  *
+ * Battery optimization: sensors are still read every SLEEP_SECONDS (hourly),
+ * but readings are buffered in RTC user memory (survives deep sleep) and only
+ * flushed once the buffer fills (~once a day). WiFi connect + NTP sync + TLS
+ * handshake — the dominant battery cost per wake — happens on 1 wake out of
+ * READINGS_PER_BATCH instead of every wake.
+ *
  * ============================================
  * WIRING DIAGRAM
  * ============================================
@@ -68,6 +74,28 @@
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 10000
 
+// Number of hourly wakes buffered before a WiFi connect + batch POST.
+// SLEEP_SECONDS=3600 -> 24 (once a day). Must stay a compile-time constant.
+#define READINGS_PER_BATCH (86400UL / SLEEP_SECONDS)
+
+// One buffered sample. NAN/-1 sentinels mark metrics that failed to read.
+struct Reading {
+  float soil_moisture;
+  float temperature;
+  float humidity;
+  float light_lux;
+};
+
+// Lives in RTC user memory (survives deep sleep, lost on power loss/brownout).
+struct RTCData {
+  uint32_t crc32;
+  uint8_t count;
+  uint8_t _pad[3];
+  Reading readings[READINGS_PER_BATCH];
+};
+
+RTCData rtcData;
+
 // NTP setup
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
@@ -76,34 +104,99 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
 HTU21D htu21d;
 BH1750 lightMeter;
 
+// Standard bit-by-bit CRC32, used to validate RTC memory on wake
+uint32_t calculateCRC32(const uint8_t *data, size_t length) {
+  uint32_t crc = 0xffffffff;
+  while (length--) {
+    uint8_t c = *data++;
+    for (uint32_t i = 0x80; i > 0; i >>= 1) {
+      bool bit = crc & 0x80000000;
+      if (c & i) bit = !bit;
+      crc <<= 1;
+      if (bit) crc ^= 0x04c11db7;
+    }
+  }
+  return crc;
+}
+
+void saveRTC() {
+  rtcData.crc32 = calculateCRC32(((uint8_t *)&rtcData) + 4, sizeof(rtcData) - 4);
+  ESP.rtcUserMemoryWrite(0, (uint32_t *)&rtcData, sizeof(rtcData));
+}
+
+void goToSleep() {
+  Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
+  Serial.flush();
+  ESP.deepSleep((uint64_t)SLEEP_SECONDS * 1000000ULL);
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("Smart Garden - NodeMCU + HTU21D + BH1750");
   Serial.println("=========================================");
 
-  // Power on soil sensor early so its 100ms warm-up overlaps with WiFi connect
+  // --- Restore buffered readings from RTC memory ---
+  ESP.rtcUserMemoryRead(0, (uint32_t *)&rtcData, sizeof(rtcData));
+  uint32_t crcOfData = calculateCRC32(((uint8_t *)&rtcData) + 4, sizeof(rtcData) - 4);
+  if (crcOfData != rtcData.crc32 || rtcData.count > READINGS_PER_BATCH) {
+    Serial.println("RTC memory invalid (cold boot / brownout) — starting new batch");
+    memset(&rtcData, 0, sizeof(rtcData));
+  }
+
+  // Power on soil sensor early so its 100ms warm-up overlaps with sensor init
   pinMode(SENSOR_POWER_PIN, OUTPUT);
   digitalWrite(SENSOR_POWER_PIN, HIGH);
 
   // Initialize I2C
   Wire.begin(I2C_SDA, I2C_SCL);
-
-  // Initialize HTU21D
   htu21d.begin();
 
-  // Initialize BH1750 — trigger first measurement immediately so the 200ms
-  // measurement window overlaps with WiFi connect below
   bool lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x23);
   if (!lightReady) {
     lightReady = lightMeter.begin(BH1750::ONE_TIME_HIGH_RES_MODE, 0x5C);
   }
-  if (lightReady) {
-    lightMeter.configure(BH1750::ONE_TIME_HIGH_RES_MODE);
-  }
   Serial.printf("BH1750: %s\n", lightReady ? "OK" : "not found");
 
-  // --- Step 1: Connect to WiFi ---
+  // --- Read sensors (every wake, no WiFi needed) ---
+  delay(100);  // ensure at least 100ms since soil sensor power-on
+  int rawMoisture = analogRead(SENSOR_ANALOG_PIN);
+  digitalWrite(SENSOR_POWER_PIN, LOW);
+  Serial.printf("Soil raw: %d\n", rawMoisture);
+
+  float temperature = htu21d.readTemperature();
+  float humidity = htu21d.readHumidity();
+  Serial.printf("HTU21D - Temp: %.1fC, Humidity: %.1f%%\n", temperature, humidity);
+
+  float lux = -1;
+  if (lightReady) {
+    lux = lightMeter.readLightLevel();
+  }
+  Serial.printf("BH1750 - Light: %.1f lux\n", lux);
+
+  // Guard against HTU21D I2C glitch: bus returning 0xFFFF decodes to ~125°C
+  if (isnan(temperature) || temperature <= -40.0 || temperature >= 80.0) temperature = NAN;
+  if (isnan(humidity) || humidity < 0.0 || humidity > 100.0) humidity = NAN;
+
+  // --- Buffer this wake's reading ---
+  if (rtcData.count < READINGS_PER_BATCH) {
+    Reading &r = rtcData.readings[rtcData.count];
+    r.soil_moisture = rawMoisture;
+    r.temperature = temperature;
+    r.humidity = humidity;
+    r.light_lux = lux;
+    rtcData.count++;
+  }
+  Serial.printf("Buffered %d/%d readings\n", rtcData.count, (unsigned)READINGS_PER_BATCH);
+
+  if (rtcData.count < READINGS_PER_BATCH) {
+    // Buffer not full yet — skip WiFi entirely, this is the power saving step
+    saveRTC();
+    goToSleep();
+    return;
+  }
+
+  // --- Buffer is full: connect WiFi and flush the whole batch ---
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
@@ -114,10 +207,10 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
       Serial.println();
-      Serial.println("WiFi timeout, sleeping");
+      Serial.println("WiFi timeout — keeping buffer, will retry next wake");
       WiFi.mode(WIFI_OFF);
-      Serial.flush();
-      ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
+      saveRTC();  // count stays at READINGS_PER_BATCH, so next wake retries immediately
+      goToSleep();
       return;
     }
     delay(250);
@@ -129,72 +222,63 @@ void setup() {
   String macAddress = WiFi.macAddress();
   Serial.printf("MAC: %s\n", macAddress.c_str());
 
-  // --- Step 2: Sync time via NTP ---
+  // --- Sync time via NTP (only needed once, right before sending) ---
   timeClient.begin();
   timeClient.update();
-  unsigned long epochTime = timeClient.getEpochTime();
-  Serial.printf("Unix epoch: %lu\n", epochTime);
+  unsigned long nowEpoch = timeClient.getEpochTime();
+  Serial.printf("Unix epoch: %lu\n", nowEpoch);
 
-  // --- Step 3: Read sensors ---
-  // Soil moisture — ensure at least 100ms since power-on
-  delay(100);
-  int rawMoisture = analogRead(SENSOR_ANALOG_PIN);
-  digitalWrite(SENSOR_POWER_PIN, LOW);
-  Serial.printf("Soil raw: %d\n", rawMoisture);
-
-  // HTU21D — temperature + humidity
-  float temperature = htu21d.readTemperature();
-  float humidity = htu21d.readHumidity();
-  Serial.printf("HTU21D - Temp: %.1fC, Humidity: %.1f%%\n", temperature, humidity);
-
-  // BH1750 — light level (measurement was triggered at boot; well past 200ms by now)
-  float lux = -1;
-  if (lightReady) {
-    lux = lightMeter.readLightLevel();
-  }
-  Serial.printf("BH1750 - Light: %.1f lux\n", lux);
-
-  // --- Step 4: Build JSON payload ---
+  // --- Build batched JSON payload ---
   JsonDocument doc;
   doc["mac"] = macAddress;
-  JsonArray readings = doc["readings"].to<JsonArray>();
-  doc["recorded_at"] = epochTime;
   doc["adc_bits"] = 10;
   doc["board_type"] = "nodemcu_htu21d_bh1750";
+  doc["raw_dry"] = RAW_DRY;
+  doc["raw_wet"] = RAW_WET;
 
-  JsonObject soilReading = readings.add<JsonObject>();
-  soilReading["metric"] = "soil_moisture";
-  soilReading["value"] = rawMoisture;
+  JsonArray batch = doc["batch"].to<JsonArray>();
+  for (uint8_t i = 0; i < rtcData.count; i++) {
+    Reading &r = rtcData.readings[i];
+    JsonObject entry = batch.add<JsonObject>();
+    // Oldest buffered reading is (count-1) wakes before now; each wake is
+    // SLEEP_SECONDS apart, so back-date from the NTP time we just fetched.
+    entry["recorded_at"] = nowEpoch - (unsigned long)(rtcData.count - 1 - i) * SLEEP_SECONDS;
 
-  if (!isnan(temperature)) {
-    JsonObject tempReading = readings.add<JsonObject>();
-    tempReading["metric"] = "temperature";
-    tempReading["value"] = round(temperature * 10.0) / 10.0;
-  }
+    JsonArray entryReadings = entry["readings"].to<JsonArray>();
 
-  if (!isnan(humidity)) {
-    JsonObject humReading = readings.add<JsonObject>();
-    humReading["metric"] = "humidity";
-    humReading["value"] = round(humidity * 10.0) / 10.0;
-  }
+    JsonObject soilReading = entryReadings.add<JsonObject>();
+    soilReading["metric"] = "soil_moisture";
+    soilReading["value"] = r.soil_moisture;
 
-  if (lux >= 0) {
-    JsonObject luxReading = readings.add<JsonObject>();
-    luxReading["metric"] = "light_lux";
-    luxReading["value"] = round(lux * 10.0) / 10.0;
+    if (!isnan(r.temperature)) {
+      JsonObject tempReading = entryReadings.add<JsonObject>();
+      tempReading["metric"] = "temperature";
+      tempReading["value"] = round(r.temperature * 10.0) / 10.0;
+    }
+    if (!isnan(r.humidity)) {
+      JsonObject humReading = entryReadings.add<JsonObject>();
+      humReading["metric"] = "humidity";
+      humReading["value"] = round(r.humidity * 10.0) / 10.0;
+    }
+    if (r.light_lux >= 0) {
+      JsonObject luxReading = entryReadings.add<JsonObject>();
+      luxReading["metric"] = "light_lux";
+      luxReading["value"] = round(r.light_lux * 10.0) / 10.0;
+    }
   }
 
   String payload;
   serializeJson(doc, payload);
-  Serial.printf("Payload: %s\n", payload.c_str());
+  Serial.printf("Payload (%u bytes, %d readings): %s\n", payload.length(), rtcData.count, payload.c_str());
 
-  // --- Step 5: POST to API (HTTPS) ---
+  // --- POST batch to API (HTTPS) ---
   BearSSL::WiFiClientSecure client;
-  client.setInsecure();  // skip cert validation — acceptable for IoT
+  client.setInsecure();      // skip cert validation — acceptable for IoT
+  client.setBufferSizes(512, 512);  // smaller buffers speed up the TLS handshake
   HTTPClient http;
   String url = String(API_ENDPOINT) + "/api/readings";
   http.begin(client, url);
-  http.setTimeout(10000);  // 10s timeout — prevents infinite hang
+  http.setTimeout(15000);
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(payload);
@@ -208,12 +292,16 @@ void setup() {
 
   http.end();
 
-  // --- Step 6: Sleep ---
+  // Clear the buffer whether or not the POST succeeded — retrying a full
+  // batch every wake would grow past READINGS_PER_BATCH slots. Worst case on
+  // a failed send is losing one day of history, same as before batching.
+  memset(&rtcData, 0, sizeof(rtcData));
+  saveRTC();
+
+  // --- Sleep ---
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
-  Serial.flush();
-  ESP.deepSleep(SLEEP_SECONDS * 1000000ULL);
+  goToSleep();
 }
 
 void loop() {

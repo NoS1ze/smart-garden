@@ -4,7 +4,8 @@
 #define WIFI_SSID "your-wifi-ssid"
 #define WIFI_PASSWORD "your-wifi-password"
 #define API_ENDPOINT "https://smartgarden.duckdns.org"  // no trailing slash
-#define SLEEP_SECONDS 3600                     // 1 hour between readings
+#define SLEEP_SECONDS 3600                     // 1 hour between sensor reads
+                                                // (WiFi/POST only happens once every 86400/SLEEP_SECONDS wakes — see diymore.ino)
 #define RAW_DRY 2694                           // raw ADC in air (calibrate per board)
 #define RAW_WET 1360                           // raw ADC in water (calibrate per board)
 // #define SOIL_PIN 35                         // uncomment to force a specific soil ADC pin (e.g. GPIO35 for boards with chopped onboard sensor)

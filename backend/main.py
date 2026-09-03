@@ -108,7 +108,16 @@ async def health():
 @limiter.limit("60/minute")
 @app.post("/api/readings", response_model=ReadingsCreateResponse, status_code=201)
 async def create_readings(request: Request, body: ReadingsCreate):
-    recorded_at = datetime.fromtimestamp(body.recorded_at, tz=timezone.utc).isoformat()
+    # Normalize to a list of (epoch, readings) entries, oldest first. Devices that
+    # batch a day's worth of RTC-buffered readings into one POST use `batch`;
+    # devices that POST immediately after every wake use `readings`+`recorded_at`.
+    if body.batch:
+        entries = sorted(
+            ((e.recorded_at, e.readings) for e in body.batch),
+            key=lambda e: e[0],
+        )
+    else:
+        entries = [(body.recorded_at, body.readings)]
 
     # Look up sensor by MAC address
     result = (
@@ -169,71 +178,81 @@ async def create_readings(request: Request, body: ReadingsCreate):
     )
     plant_id = plant_assocs.data[0]["plant_id"] if plant_assocs.data else None
 
-    # Check previous soil_moisture for watering detection BEFORE inserting
-    soil_reading = next((r for r in body.readings if r.metric.value == "soil_moisture"), None)
-    prev_soil_raw = None
-    if soil_reading:
-        prev_result = (
-            supabase.table("readings")
-            .select("value")
-            .eq("sensor_id", sensor_id)
-            .eq("metric", "soil_moisture")
-            .order("recorded_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if prev_result.data:
-            prev_soil_raw = prev_result.data[0]["value"]
-
-    rows = [
-        {
-            "sensor_id": sensor_id,
-            "metric": r.metric.value,
-            "value": r.value,
-            "recorded_at": recorded_at,
-            **({"plant_id": plant_id} if plant_id else {}),
-        }
-        for r in body.readings
-    ]
-
-    result = supabase.table("readings").insert(rows).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to insert readings")
-
-    # Watering detection: raw drops significantly = moisture increased = watered
-    if soil_reading and prev_soil_raw is not None:
-        adc_range = 400 if (body.adc_bits or 10) == 10 else 2600
-        raw_drop = prev_soil_raw - soil_reading.value
-        if raw_drop > adc_range * 0.2:  # >20% of ADC range
-            three_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
-            for assoc in (plant_assocs.data or []):
-                recent = (
-                    supabase.table("watering_events")
-                    .select("id")
-                    .eq("plant_id", assoc["plant_id"])
-                    .gte("detected_at", three_hours_ago)
-                    .limit(1)
-                    .execute()
-                )
-                if recent.data:
-                    continue  # skip, already detected recently
-                supabase.table("watering_events").insert({
-                    "plant_id": assoc["plant_id"],
-                    "sensor_id": sensor_id,
-                    "detected_at": recorded_at,
-                    "moisture_before": prev_soil_raw,
-                    "moisture_after": soil_reading.value,
-                    "source": "auto",
-                }).execute()
-                _update_watering_schedules(assoc["plant_id"])
-
-    alerts_triggered = check_alerts(
-        sensor_id,
-        [{"metric": r.metric.value, "value": r.value} for r in body.readings],
+    # Fetch the last known soil_moisture value once, before processing any
+    # entries, so watering detection has a baseline for the oldest entry
+    prev_result = (
+        supabase.table("readings")
+        .select("value")
+        .eq("sensor_id", sensor_id)
+        .eq("metric", "soil_moisture")
+        .order("recorded_at", desc=True)
+        .limit(1)
+        .execute()
     )
+    prev_soil_raw = prev_result.data[0]["value"] if prev_result.data else None
+
+    total_inserted = 0
+    alerts_triggered = 0
+
+    for epoch, entry_readings in entries:
+        recorded_at = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+        soil_reading = next((r for r in entry_readings if r.metric.value == "soil_moisture"), None)
+
+        rows = [
+            {
+                "sensor_id": sensor_id,
+                "metric": r.metric.value,
+                "value": r.value,
+                "recorded_at": recorded_at,
+                **({"plant_id": plant_id} if plant_id else {}),
+            }
+            for r in entry_readings
+        ]
+
+        result = supabase.table("readings").insert(rows).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to insert readings")
+        total_inserted += len(result.data)
+
+        # Watering detection: raw drops significantly = moisture increased = watered
+        if soil_reading and prev_soil_raw is not None:
+            adc_range = 400 if (body.adc_bits or 10) == 10 else 2600
+            raw_drop = prev_soil_raw - soil_reading.value
+            if raw_drop > adc_range * 0.2:  # >20% of ADC range
+                three_hours_ago = (
+                    datetime.fromtimestamp(epoch, tz=timezone.utc) - timedelta(hours=3)
+                ).isoformat()
+                for assoc in (plant_assocs.data or []):
+                    recent = (
+                        supabase.table("watering_events")
+                        .select("id")
+                        .eq("plant_id", assoc["plant_id"])
+                        .gte("detected_at", three_hours_ago)
+                        .limit(1)
+                        .execute()
+                    )
+                    if recent.data:
+                        continue  # skip, already detected recently
+                    supabase.table("watering_events").insert({
+                        "plant_id": assoc["plant_id"],
+                        "sensor_id": sensor_id,
+                        "detected_at": recorded_at,
+                        "moisture_before": prev_soil_raw,
+                        "moisture_after": soil_reading.value,
+                        "source": "auto",
+                    }).execute()
+                    _update_watering_schedules(assoc["plant_id"])
+
+        if soil_reading:
+            prev_soil_raw = soil_reading.value
+
+        alerts_triggered += check_alerts(
+            sensor_id,
+            [{"metric": r.metric.value, "value": r.value} for r in entry_readings],
+        )
 
     return ReadingsCreateResponse(
-        inserted=len(result.data),
+        inserted=total_inserted,
         alerts_triggered=alerts_triggered,
     )
 

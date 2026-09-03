@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class MetricName(str, enum.Enum):
@@ -30,14 +30,31 @@ class ReadingItem(BaseModel):
     value: float
 
 
+class BatchEntry(BaseModel):
+    recorded_at: int = Field(..., description="Unix epoch seconds for this reading set")
+    readings: list[ReadingItem] = Field(..., min_length=1)
+
+
 class ReadingsCreate(BaseModel):
     mac: str = Field(..., description="ESP8266 WiFi MAC address")
-    readings: list[ReadingItem] = Field(..., min_length=1)
-    recorded_at: int = Field(..., description="Unix epoch seconds")
+    readings: Optional[list[ReadingItem]] = Field(None, min_length=1)
+    recorded_at: Optional[int] = Field(None, description="Unix epoch seconds")
+    batch: Optional[list[BatchEntry]] = Field(
+        None,
+        min_length=1,
+        description="Multiple timestamped reading sets in one POST, e.g. a device "
+        "that buffers hourly readings in RTC memory and uploads once a day",
+    )
     adc_bits: Optional[int] = Field(None, description="ADC bit depth (10 or 12)")
     board_type: Optional[str] = Field(None, description="Board type slug")
     raw_dry: Optional[int] = Field(None, description="Raw ADC value in air (dry calibration)")
     raw_wet: Optional[int] = Field(None, description="Raw ADC value in water (wet calibration)")
+
+    @model_validator(mode="after")
+    def _check_shape(self):
+        if self.batch is None and (self.readings is None or self.recorded_at is None):
+            raise ValueError("provide either 'readings' + 'recorded_at', or 'batch'")
+        return self
 
 
 class ReadingsCreateResponse(BaseModel):

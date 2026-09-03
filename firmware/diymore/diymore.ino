@@ -2,6 +2,12 @@
  * Smart Garden - DIY MORE ESP32 Sensor Board
  * Board: ESP32-D0WDQ6 (DIY MORE prebuilt board with 18650 holder)
  *
+ * Battery optimization: sensors are still read every SLEEP_SECONDS (hourly),
+ * but readings are buffered in RTC slow memory (survives deep sleep, zeroed
+ * on power-on/brownout) and only flushed once the buffer fills (~once a
+ * day). WiFi connect + NTP sync + TLS handshake — the dominant battery cost
+ * per wake — happens on 1 wake out of READINGS_PER_BATCH instead of every wake.
+ *
  * ============================================
  * WIRING
  * ============================================
@@ -70,6 +76,22 @@
 // WiFi connection timeout (milliseconds)
 #define WIFI_TIMEOUT_MS 15000
 
+// Number of hourly wakes buffered before a WiFi connect + batch POST.
+// SLEEP_SECONDS=3600 -> 24 (once a day). Must stay a compile-time constant.
+#define READINGS_PER_BATCH (86400UL / SLEEP_SECONDS)
+
+// One buffered sample. NAN/-1 sentinels mark metrics that failed to read.
+struct Reading {
+  int soil_moisture;
+  float temperature;
+  float humidity;
+  float light_lux;
+};
+
+// RTC slow memory — survives deep sleep, zeroed on power-on/brownout.
+RTC_DATA_ATTR Reading rtcReadings[READINGS_PER_BATCH];
+RTC_DATA_ATTR uint8_t rtcCount = 0;
+
 // NTP setup
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
@@ -99,6 +121,13 @@ void setup() {
   Serial.println("Smart Garden - DIY MORE ESP32");
   Serial.println("=============================");
 
+  if (rtcCount > READINGS_PER_BATCH) rtcCount = 0;  // defensive clamp
+
+  // This wake will fill the buffer (or it's already full from a failed send
+  // last time) — start WiFi as early as possible so connect time overlaps
+  // with the DHT11/BH1750 warm-up delay below.
+  bool willSend = (rtcCount >= READINGS_PER_BATCH - 1);
+
   // Power on sensors
   pinMode(SENSOR_POWER_PIN, OUTPUT);
   pinMode(LIGHT_POWER_PIN, OUTPUT);
@@ -127,40 +156,17 @@ void setup() {
   }
   Serial.printf("BH1750: %s\n", lightReady ? "OK" : "not found");
 
-  // Start WiFi now so it connects during the mandatory DHT11 warm-up delay below
-  WiFi.persistent(false);
-  WiFi.setAutoReconnect(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  // DHT11 needs ~1s to stabilize after power-on (BH1750 200ms + WiFi connect overlap here)
-  delay(1000);
-  Serial.printf("Connecting to %s", WIFI_SSID);
-
-  unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
-      Serial.println();
-      Serial.println("WiFi timeout, sleeping");
-      goToSleep();
-      return;
-    }
-    delay(250);
-    Serial.print(".");
+  if (willSend) {
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
-  Serial.println();
-  Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
 
-  String macAddress = WiFi.macAddress();
-  Serial.printf("MAC: %s\n", macAddress.c_str());
+  // DHT11 needs ~1s to stabilize after power-on (BH1750 200ms + WiFi connect, if any, overlap here)
+  delay(1000);
 
-  // --- Step 2: Sync time via NTP ---
-  timeClient.begin();
-  timeClient.update();
-  unsigned long epochTime = timeClient.getEpochTime();
-  Serial.printf("Unix epoch: %lu\n", epochTime);
-
-  // --- Step 3: Read sensors ---
+  // --- Read sensors (every wake, no WiFi needed) ---
   // Soil moisture — raw 12-bit ADC value (0-4095)
 #ifdef SOIL_PIN
   // Fixed soil pin (for boards with chopped onboard sensor)
@@ -201,53 +207,101 @@ void setup() {
   }
   Serial.printf("BH1750 - Light: %.1f lux\n", lux);
 
-  // --- Step 4: Build JSON payload ---
+  // Guard: DHT11 returns 85°C on failed reads; add explicit range guard
+  if (isnan(temperature) || temperature <= -40.0 || temperature >= 80.0) temperature = NAN;
+
+  // --- Buffer this wake's reading ---
+  if (rtcCount < READINGS_PER_BATCH) {
+    Reading &r = rtcReadings[rtcCount];
+    r.soil_moisture = rawMoisture;
+    r.temperature = temperature;
+    r.humidity = humidity;
+    r.light_lux = lux;
+    rtcCount++;
+  }
+  Serial.printf("Buffered %d/%d readings\n", rtcCount, (unsigned)READINGS_PER_BATCH);
+
+  if (rtcCount < READINGS_PER_BATCH) {
+    // Buffer not full yet — WiFi was never started, straight to sleep
+    goToSleep();
+    return;
+  }
+
+  // --- Buffer is full: finish connecting WiFi (already started above) ---
+  Serial.printf("Connecting to %s", WIFI_SSID);
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
+      Serial.println();
+      Serial.println("WiFi timeout — keeping buffer, will retry next wake");
+      goToSleep();
+      return;
+    }
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.printf("Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+
+  String macAddress = WiFi.macAddress();
+  Serial.printf("MAC: %s\n", macAddress.c_str());
+
+  // --- Sync time via NTP (only needed once, right before sending) ---
+  timeClient.begin();
+  timeClient.update();
+  unsigned long nowEpoch = timeClient.getEpochTime();
+  Serial.printf("Unix epoch: %lu\n", nowEpoch);
+
+  // --- Build batched JSON payload ---
   JsonDocument doc;
   doc["mac"] = macAddress;
-  JsonArray readings = doc["readings"].to<JsonArray>();
-  doc["recorded_at"] = epochTime;
   doc["adc_bits"] = 12;
   doc["board_type"] = "diymore_dht11";
   doc["raw_dry"] = RAW_DRY;
   doc["raw_wet"] = RAW_WET;
 
-  // Soil moisture — send raw ADC value (frontend converts via soil type calibration)
-  JsonObject soilReading = readings.add<JsonObject>();
-  soilReading["metric"] = "soil_moisture";
-  soilReading["value"] = rawMoisture;
+  JsonArray batch = doc["batch"].to<JsonArray>();
+  for (uint8_t i = 0; i < rtcCount; i++) {
+    Reading &r = rtcReadings[i];
+    JsonObject entry = batch.add<JsonObject>();
+    // Oldest buffered reading is (count-1) wakes before now; each wake is
+    // SLEEP_SECONDS apart, so back-date from the NTP time we just fetched.
+    entry["recorded_at"] = nowEpoch - (unsigned long)(rtcCount - 1 - i) * SLEEP_SECONDS;
 
-  // Temperature
-  if (!isnan(temperature)) {
-    JsonObject tempReading = readings.add<JsonObject>();
-    tempReading["metric"] = "temperature";
-    tempReading["value"] = round(temperature * 10.0) / 10.0;
-  }
+    JsonArray entryReadings = entry["readings"].to<JsonArray>();
 
-  // Humidity
-  if (!isnan(humidity)) {
-    JsonObject humReading = readings.add<JsonObject>();
-    humReading["metric"] = "humidity";
-    humReading["value"] = round(humidity * 10.0) / 10.0;
-  }
+    JsonObject soilReading = entryReadings.add<JsonObject>();
+    soilReading["metric"] = "soil_moisture";
+    soilReading["value"] = r.soil_moisture;
 
-  // Light
-  if (lux >= 0) {
-    JsonObject luxReading = readings.add<JsonObject>();
-    luxReading["metric"] = "light_lux";
-    luxReading["value"] = round(lux * 10.0) / 10.0;
+    if (!isnan(r.temperature)) {
+      JsonObject tempReading = entryReadings.add<JsonObject>();
+      tempReading["metric"] = "temperature";
+      tempReading["value"] = round(r.temperature * 10.0) / 10.0;
+    }
+    if (!isnan(r.humidity)) {
+      JsonObject humReading = entryReadings.add<JsonObject>();
+      humReading["metric"] = "humidity";
+      humReading["value"] = round(r.humidity * 10.0) / 10.0;
+    }
+    if (r.light_lux >= 0) {
+      JsonObject luxReading = entryReadings.add<JsonObject>();
+      luxReading["metric"] = "light_lux";
+      luxReading["value"] = round(r.light_lux * 10.0) / 10.0;
+    }
   }
 
   String payload;
   serializeJson(doc, payload);
-  Serial.printf("Payload: %s\n", payload.c_str());
+  Serial.printf("Payload (%u bytes, %d readings): %s\n", payload.length(), rtcCount, payload.c_str());
 
-  // --- Step 5: POST to API ---
+  // --- POST batch to API ---
   WiFiClientSecure client;
   client.setInsecure();  // skip cert validation — acceptable for IoT
   HTTPClient http;
   String url = String(API_ENDPOINT) + "/api/readings";
   http.begin(client, url);
-  http.setTimeout(10000);  // 10s timeout — prevents infinite hang on bad connection
+  http.setTimeout(15000);
   http.addHeader("Content-Type", "application/json");
 
   int httpCode = http.POST(payload);
@@ -261,7 +315,11 @@ void setup() {
 
   http.end();
 
-  // --- Step 6: Sleep ---
+  // Clear the buffer whether or not the POST succeeded — retrying a full
+  // batch every wake would grow past READINGS_PER_BATCH slots. Worst case on
+  // a failed send is losing one day of history, same as before batching.
+  rtcCount = 0;
+
   goToSleep();
 }
 
