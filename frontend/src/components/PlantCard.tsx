@@ -436,9 +436,9 @@ export function PlantCard({ plant, onClick }: Props) {
             {plant.name}
           </text>
 
-          {/* Last reading time — top-right */}
+          {/* Last reading time — top-right. Hover for the exact timestamp. */}
           {lastReadingTime && (() => {
-            const { text, staleness } = timeAgo(lastReadingTime);
+            const { text, staleness, absolute } = timeAgo(lastReadingTime);
             const compact = text.replace(/ ago$/, '').replace('Just now', 'now');
             const fill = staleness === 'fresh' ? '#4ade80' : staleness === 'stale' ? '#f59e0b' : '#ef4444';
             return (
@@ -446,6 +446,7 @@ export function PlantCard({ plant, onClick }: Props) {
                 textAnchor="end"
                 fontFamily="DM Sans, sans-serif" fontSize="9.5" fontWeight="500"
                 fill={fill}>
+                <title>Last reading: {absolute}</title>
                 {compact}
               </text>
             );

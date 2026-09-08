@@ -23,7 +23,14 @@ export function getCalibration(
     : { rawDry: soilType.raw_dry, rawWet: soilType.raw_wet };
 }
 
-export function timeAgo(isoString: string): { text: string; staleness: 'fresh' | 'stale' | 'dead' } {
+// Boards report once a day (daily-batching firmware) rather than every wake,
+// so "missing" needs to mean "later than a day's cycle", not "later than an hour".
+// fresh: within a normal daily cycle. stale: overdue but could just be a late
+// retry. dead: past the retry window — treat as actually missing.
+const STALE_AFTER_HOURS = 24;
+const DEAD_AFTER_HOURS = 25;
+
+export function timeAgo(isoString: string): { text: string; staleness: 'fresh' | 'stale' | 'dead'; absolute: string } {
   const diffMs = Date.now() - new Date(isoString).getTime();
   const diffMin = Math.floor(diffMs / 60000);
   const diffHr = Math.floor(diffMs / 3600000);
@@ -36,8 +43,11 @@ export function timeAgo(isoString: string): { text: string; staleness: 'fresh' |
   else if (diffDay < 7) text = `${diffDay}d ago`;
   else text = new Date(isoString).toLocaleDateString();
 
-  const staleness = diffMin < 60 ? 'fresh' : diffMin < 120 ? 'stale' : 'dead';
-  return { text, staleness };
+  const staleness = diffHr < STALE_AFTER_HOURS ? 'fresh' : diffHr < DEAD_AFTER_HOURS ? 'stale' : 'dead';
+  const absolute = new Date(isoString).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+  return { text, staleness, absolute };
 }
 
 export function metricSuffix(metricKey: string): string {
