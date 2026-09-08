@@ -83,36 +83,29 @@ export function PlantDashboard({ onSelectPlant }: Props) {
       .limit(500)
       .then(({ data }) => {
         if (!data) return;
-        const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        // Boards upload once a day (daily-batching firmware), so a "last hour"
+        // freshness window only ever catches the few minutes right after a
+        // batch lands. Widen to a rolling 25h (matches the staleness cutoff)
+        // and average every value in that window instead of taking one
+        // snapshot — this reads as "today's average" per room and stays
+        // populated all day instead of flickering on once daily.
+        const cutoff = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
         const aggs: RoomAggregates = {};
 
         for (const [roomId, sids] of Object.entries(roomSensorMap)) {
-          // For each sensor, find latest reading per metric (fresh only)
-          const sensorLatest: Record<string, Record<string, number>> = {};
+          const metricValues: Record<string, number[]> = {};
           for (const row of data) {
             if (!sids.includes(row.sensor_id)) continue;
             if (row.recorded_at < cutoff) continue;
             if (row.metric === 'soil_moisture') continue;
             if (!(row.metric in METRIC_UNITS)) continue;
-            if (!sensorLatest[row.sensor_id]) sensorLatest[row.sensor_id] = {};
-            if (!(row.metric in sensorLatest[row.sensor_id])) {
-              sensorLatest[row.sensor_id][row.metric] = row.value;
-            }
-          }
-
-          // Average across sensors per metric
-          const metricSums: Record<string, { sum: number; count: number }> = {};
-          for (const metrics of Object.values(sensorLatest)) {
-            for (const [m, v] of Object.entries(metrics)) {
-              if (!metricSums[m]) metricSums[m] = { sum: 0, count: 0 };
-              metricSums[m].sum += v;
-              metricSums[m].count += 1;
-            }
+            if (!metricValues[row.metric]) metricValues[row.metric] = [];
+            metricValues[row.metric].push(row.value);
           }
 
           const roomAvgs: Record<string, number> = {};
-          for (const [m, { sum, count }] of Object.entries(metricSums)) {
-            roomAvgs[m] = sum / count;
+          for (const [m, vals] of Object.entries(metricValues)) {
+            roomAvgs[m] = vals.reduce((a, b) => a + b, 0) / vals.length;
           }
           if (Object.keys(roomAvgs).length > 0) {
             aggs[roomId] = roomAvgs;
@@ -200,7 +193,7 @@ export function PlantDashboard({ onSelectPlant }: Props) {
                       const cfg = METRIC_UNITS[metric];
                       if (!cfg) return null;
                       return (
-                        <span key={metric} className="room-metric-chip">
+                        <span key={metric} className="room-metric-chip" title="Today's average (last 25h)">
                           <MetricIcon metric={metric} size={14} />
                           {value.toFixed(cfg.decimals)}{cfg.unit}
                         </span>
