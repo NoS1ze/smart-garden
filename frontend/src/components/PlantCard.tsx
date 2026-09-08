@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Plant, Reading, WateringSchedule } from '../types';
 import { rawToPercent, timeAgo, getMetricRanges, getMetricStatus, getCalibration } from '../lib/calibration';
+import { useTheme } from '../lib/theme';
 
 // ─── Explicit hex colors (CSS vars don't resolve in SVG stroke/fill) ──────────
 const METRIC_HEX: Record<string, string> = {
@@ -237,6 +238,8 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, st
 
 // ─── PlantCard ────────────────────────────────────────────────────────────────
 export function PlantCard({ plant, onClick }: Props) {
+  const { theme } = useTheme();
+  const nameTextFill = theme === 'dark' ? 'rgba(255,255,255,0.92)' : 'rgba(15,27,19,0.88)';
   const [latestValues,    setLatestValues]    = useState<Record<string, number>>({});
   const [lastReadingTime, setLastReadingTime] = useState<string | null>(null);
   const [needsAttention,  setNeedsAttention]  = useState(false);
@@ -388,12 +391,29 @@ export function PlantCard({ plant, onClick }: Props) {
             </defs>
           )}
 
-          {/* Photo as full background */}
-          {plant.photo_url && (
+          {/* Avatar — small circular photo (or initial) top-left. Identity, not wallpaper. */}
+          {plant.photo_url ? (
             <>
-              <image href={plant.photo_url} x={0} y={0} width={200} height={140}
-                preserveAspectRatio="xMidYMid slice" />
-              <rect x={0} y={0} width={200} height={140} fill="rgba(8,18,10,0.70)" />
+              <defs>
+                <clipPath id={`avatar-${clipId}`}>
+                  <circle cx={22} cy={20} r={16} />
+                </clipPath>
+              </defs>
+              <image href={plant.photo_url} x={6} y={4} width={32} height={32}
+                preserveAspectRatio="xMidYMid slice"
+                clipPath={`url(#avatar-${clipId})`} />
+              <circle cx={22} cy={20} r={16} fill="none"
+                stroke="rgba(128,128,128,0.3)" strokeWidth={1.5} />
+            </>
+          ) : (
+            <>
+              <circle cx={22} cy={20} r={16} fill={healthIndicator?.color ?? '#3f5a47'} />
+              <text x={22} y={21}
+                textAnchor="middle" dominantBaseline="middle"
+                fontFamily="DM Sans, sans-serif" fontSize="14" fontWeight="800"
+                fill="rgba(255,255,255,0.92)">
+                {plant.name.charAt(0).toUpperCase()}
+              </text>
             </>
           )}
 
@@ -409,10 +429,10 @@ export function PlantCard({ plant, onClick }: Props) {
             </>
           )}
 
-          {/* Plant name — top-left */}
-          <text x="10" y="18"
+          {/* Plant name — right of avatar */}
+          <text x="44" y="23"
             fontFamily="DM Sans, sans-serif" fontSize="13" fontWeight="800"
-            fill="rgba(255,255,255,0.92)">
+            fill={nameTextFill}>
             {plant.name}
           </text>
 
