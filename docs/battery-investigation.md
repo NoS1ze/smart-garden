@@ -1,4 +1,120 @@
-# Battery Drain Investigation — NodeMCU V3 (Ms Green)
+# Battery Drain Investigation
+
+> **2026-09-12 update — read this first.** The daily-batching firmware shipped and
+> worked exactly as designed, but it did **not** visibly extend battery life on the
+> DIY MORE boards. The analysis below the divider is the original (pre-batching)
+> investigation and its power-budget estimates; several of those estimates turned
+> out not to hold in the field. See **"Field results"** immediately below.
+
+---
+
+## Field results: daily batching on DIY MORE (2026-09-03 → 2026-09-10)
+
+Four DIY MORE ESP32 boards ran the daily-batching firmware for a week, then all
+went silent within ~1.5 days of each other.
+
+**The firmware did what it was supposed to.** Evidence:
+- Reading timestamps are exactly `3600.000000s` apart — the arithmetic back-dating
+  from the RTC buffer, not per-wake NTP. Confirms readings came from the buffer.
+- nginx access log shows **exactly 4 POSTs/day** (one per board) for Sep 4–8,
+  down from 24/board/day. WiFi on-time genuinely fell ~24×.
+- Daily batch boundaries visible in the data, with ~0.7%/day RTC drift (each batch
+  lands ~10 min earlier than the last) — expected, harmless.
+
+**But battery life did not improve: ~7 days, same as before.**
+
+### Why the "before" comparison is unreliable
+
+Initial read of the reading-gap history suggested runs of 5–16 days on the old
+hourly firmware. That comparison does **not** hold up: the gap boundaries are
+*synchronised across all four boards*.
+
+- All four stopped within ~19h of each other around 04-07/04-08
+- All four resumed at **04-17 11:49, to the same minute**
+- All four stopped again ~04-24, resumed 09-03
+
+Batteries do not die in lockstep and certainly do not come back to life
+simultaneously. Those gaps are outages, bulk recharges, or the project being
+shelved — not battery exhaustion. So the historical "16 day run" is a *lower
+bound* interrupted by something else, not a measured battery life.
+
+The Sep 3–10 run has the same ambiguity: three boards stopped within 25 minutes
+of each other, which is equally consistent with a common-mode event.
+
+### Confounder: the cells were old
+
+`battery_changes` shows the last logged battery change on all four boards was
+**2026-03-17** — six months prior, including a 4-month shelf period (04-24 →
+09-03). If they weren't topped up before redeployment they started that week
+already depleted and degraded, which alone accounts for 7 days.
+
+### What this means
+
+- WiFi was **not** the dominant consumer on DIY MORE boards. At ~7 days on a
+  ~2000mAh cell the average draw is ~11.5 mA; hourly POSTs only accounted for
+  roughly 8 mAh/day (~3% of budget). Removing 23 of 24 uploads saves ~6.6 mAh/day
+  — moving battery life from ~7.0 to ~7.2 days. Invisible, as observed.
+- The remaining ~11.5 mA constant draw is **hardware**, not firmware:
+  - AMS1117 LDO quiescent: 5–10 mA
+  - Onboard power LED: 2–5 mA
+  - Onboard sensors, if hardwired to VCC rather than gated: ~5 mA
+    (the `board_types` note says "Sensors hardwired to VCC (always on)", which
+    contradicts the firmware's GPIO26 gating — **user rewired these off 3V3**)
+- **No conclusion is possible without a multimeter.** All further log archaeology
+  is inference around one unmeasured number.
+
+### Outstanding: the measurement that settles it
+
+Multimeter in series with the cell, board in deep sleep, **USB disconnected**
+(USB powers the CH340/LED off VBUS and back-feeds the rail):
+
+- **~10 mA** → LDO + LED dominate; firmware is irrelevant, do the hardware mod
+- **~200 µA** → firmware is already good and the 7 days were just tired cells
+
+Gotchas: measure during the sleep window, not the ~2s wake. A cheap DMM's µA-range
+burden voltage can brown the board out on wake — if it resets only when metered,
+that's the meter. On DIY MORE measure at the cell so the onboard charge circuit is
+inside the measurement.
+
+Best comparison available: measure a NodeMCU (MCP1700) and a DIY MORE side by side.
+
+### Hardware fixes, in order of expected impact
+
+1. Bypass the onboard AMS1117 — feed 3.3V from an MCP1700 straight to the 3V3 pin,
+   the same mod already done on the NodeMCU. **Caveat:** on the NodeMCU the LED and
+   CH340 sit on the VIN/5V rail so that mod bypassed them too; on DIY MORE they may
+   sit on the 3.3V rail, in which case this alone won't remove them.
+2. Remove the power LED (desolder, or cut its series resistor).
+3. Verify GPIO26 actually gates the sensors (toggle it and watch the current).
+
+Realistic ceiling for DIY MORE even fully modded: weeks, not the NodeMCU's
+60–90 days. The all-in-one board design fights low-power operation.
+
+### Firmware changes made in response (fw 2.1.0)
+
+Not battery fixes — robustness and diagnosability:
+- **Cold-boot immediate upload.** A reconnected board used to report nothing for
+  24h, making a battery swap indistinguishable from a dead board. Now it uploads
+  on the first wake after power-on, then resumes daily batching.
+- **Exponential upload backoff.** A failed upload used to retry every wake (24
+  connect attempts/day, worse than the hourly firmware it replaced). Now backs off
+  2/4/8 wakes, and drops the batch after 4 consecutive failures so a stuck buffer
+  can't block new readings forever.
+- **ESP8266 `RF_DISABLED` on non-upload wakes.** The ESP8266 powers its radio at
+  boot on *every* wake by default, even when the sketch never touches WiFi. Only
+  the upload wake now sleeps with `RF_DEFAULT`. This is a genuine saving on the
+  NodeMCU boards and was missing from the original batching work.
+- **ESP32 GPIO hold in deep sleep.** ESP32 GPIOs float in deep sleep, so a gated
+  sensor's VCC could still be phantom-powered through its signal pin's ESD diodes.
+  Power pins are now held low for the whole sleep. Relevant now that the sensors
+  have been rewired off the always-on 3V3 rail.
+- **Firmware version reporting.** Every upload carries `fw_version`, stored on
+  `sensors.firmware_version` with changeovers logged to `firmware_history`, so
+  behaviour can be attributed to a specific build from here on.
+
+---
+
+# Original investigation (pre-batching) — NodeMCU V3 (Ms Green)
 
 ## Context
 

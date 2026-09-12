@@ -60,8 +60,15 @@
 #include <DHT.h>
 #include <Wire.h>
 #include <BH1750.h>
+#include "driver/gpio.h"
+#include "esp_system.h"
 
 #include "config.h"
+
+// Reported with every upload and stored per-sensor, so behaviour (battery life,
+// upload cadence, sensor quality) can be compared across builds. Bump on any
+// change that could plausibly affect how the board behaves in the field.
+#define FIRMWARE_VERSION "2.1.0"
 
 // Pin definitions
 #define DHT_PIN 22
@@ -88,9 +95,16 @@ struct Reading {
   float light_lux;
 };
 
+// Exponential backoff after a failed upload. Without this a WiFi or backend
+// outage turns into a full connect attempt every single wake (24/day), which
+// burns far more radio time than the once-a-day upload it replaced.
+#define MAX_BACKOFF_WAKES 12
+
 // RTC slow memory — survives deep sleep, zeroed on power-on/brownout.
 RTC_DATA_ATTR Reading rtcReadings[READINGS_PER_BATCH];
 RTC_DATA_ATTR uint8_t rtcCount = 0;
+RTC_DATA_ATTR uint8_t rtcFailures = 0;    // consecutive failed uploads
+RTC_DATA_ATTR uint8_t rtcSkipWakes = 0;   // wakes still to skip before retrying
 
 // NTP setup
 WiFiUDP ntpUDP;
@@ -107,10 +121,36 @@ void goToSleep() {
   WiFi.mode(WIFI_OFF);
   digitalWrite(SENSOR_POWER_PIN, LOW);
   digitalWrite(LIGHT_POWER_PIN, LOW);
+
+  // ESP32 GPIOs go high-impedance in deep sleep unless explicitly held. A
+  // floating sensor VCC can still be phantom-powered through the ESD diodes on
+  // its signal pin, so pin the power rails low for the whole sleep.
+  gpio_hold_en((gpio_num_t)SENSOR_POWER_PIN);
+  gpio_hold_en((gpio_num_t)LIGHT_POWER_PIN);
+  gpio_deep_sleep_hold_en();
+
   Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
   Serial.flush();
   esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_SECONDS * 1000000ULL);
   esp_deep_sleep_start();
+}
+
+// Called after a failed upload: back off exponentially instead of retrying
+// every wake, and eventually drop the batch so a stuck buffer doesn't block
+// new readings forever.
+void registerFailure() {
+  if (rtcFailures < 255) rtcFailures++;
+  if (rtcFailures >= 4) {
+    Serial.println("Too many failed uploads — dropping buffered batch");
+    rtcCount = 0;
+    rtcFailures = 0;
+    rtcSkipWakes = 0;
+    return;
+  }
+  uint16_t wakes = 1 << rtcFailures;  // 2, 4, 8 wakes
+  rtcSkipWakes = wakes > MAX_BACKOFF_WAKES ? MAX_BACKOFF_WAKES : (uint8_t)wakes;
+  Serial.printf("Upload failed (attempt %d) — backing off %d wake(s)\n",
+                rtcFailures, rtcSkipWakes);
 }
 
 void setup() {
@@ -118,15 +158,33 @@ void setup() {
 
   Serial.begin(115200);
   Serial.println();
-  Serial.println("Smart Garden - DIY MORE ESP32");
+  Serial.println("Smart Garden - DIY MORE ESP32  fw " FIRMWARE_VERSION);
   Serial.println("=============================");
+
+  // Release the deep-sleep GPIO hold before touching the power pins — while
+  // held they stay latched at their pre-sleep level and ignore digitalWrite,
+  // which would leave the sensors permanently unpowered.
+  gpio_deep_sleep_hold_dis();
+  gpio_hold_dis((gpio_num_t)SENSOR_POWER_PIN);
+  gpio_hold_dis((gpio_num_t)LIGHT_POWER_PIN);
 
   if (rtcCount > READINGS_PER_BATCH) rtcCount = 0;  // defensive clamp
 
-  // This wake will fill the buffer (or it's already full from a failed send
-  // last time) — start WiFi as early as possible so connect time overlaps
-  // with the DHT11/BH1750 warm-up delay below.
-  bool willSend = (rtcCount >= READINGS_PER_BATCH - 1);
+  // A cold boot (battery swap, reflash, brownout) uploads immediately rather
+  // than buffering for 24h first — otherwise a board you just reconnected
+  // looks dead for a full day and there's no way to tell it's working.
+  bool coldBoot = (esp_reset_reason() != ESP_RST_DEEPSLEEP);
+  if (coldBoot) {
+    Serial.println("Cold boot — uploading immediately to confirm the board is alive");
+    rtcCount = 0;
+    rtcFailures = 0;
+    rtcSkipWakes = 0;
+  }
+
+  if (rtcSkipWakes > 0) rtcSkipWakes--;  // serving out a backoff
+
+  // Decide up front so WiFi can start early and overlap the sensor warm-up.
+  bool willSend = (coldBoot || rtcCount >= READINGS_PER_BATCH - 1) && rtcSkipWakes == 0;
 
   // Power on sensors
   pinMode(SENSOR_POWER_PIN, OUTPUT);
@@ -221,19 +279,20 @@ void setup() {
   }
   Serial.printf("Buffered %d/%d readings\n", rtcCount, (unsigned)READINGS_PER_BATCH);
 
-  if (rtcCount < READINGS_PER_BATCH) {
-    // Buffer not full yet — WiFi was never started, straight to sleep
+  if (!willSend) {
+    // Still buffering (or serving out a backoff) — WiFi was never started
     goToSleep();
     return;
   }
 
-  // --- Buffer is full: finish connecting WiFi (already started above) ---
+  // --- Time to upload: finish connecting WiFi (already started above) ---
   Serial.printf("Connecting to %s", WIFI_SSID);
   unsigned long wifiStart = millis();
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
       Serial.println();
-      Serial.println("WiFi timeout — keeping buffer, will retry next wake");
+      Serial.println("WiFi timeout — keeping buffer");
+      registerFailure();
       goToSleep();
       return;
     }
@@ -257,6 +316,7 @@ void setup() {
   doc["mac"] = macAddress;
   doc["adc_bits"] = 12;
   doc["board_type"] = "diymore_dht11";
+  doc["fw_version"] = FIRMWARE_VERSION;
   doc["raw_dry"] = RAW_DRY;
   doc["raw_wet"] = RAW_WET;
 
@@ -315,10 +375,15 @@ void setup() {
 
   http.end();
 
-  // Clear the buffer whether or not the POST succeeded — retrying a full
-  // batch every wake would grow past READINGS_PER_BATCH slots. Worst case on
-  // a failed send is losing one day of history, same as before batching.
-  rtcCount = 0;
+  if (httpCode >= 200 && httpCode < 300) {
+    rtcCount = 0;
+    rtcFailures = 0;
+    rtcSkipWakes = 0;
+  } else {
+    // Keep the buffer and retry later with backoff; registerFailure() drops
+    // the batch once retries are clearly not going to succeed.
+    registerFailure();
+  }
 
   goToSleep();
 }

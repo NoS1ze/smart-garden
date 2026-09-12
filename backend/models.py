@@ -49,6 +49,10 @@ class ReadingsCreate(BaseModel):
     board_type: Optional[str] = Field(None, description="Board type slug")
     raw_dry: Optional[int] = Field(None, description="Raw ADC value in air (dry calibration)")
     raw_wet: Optional[int] = Field(None, description="Raw ADC value in water (wet calibration)")
+    fw_version: Optional[str] = Field(
+        None, max_length=32,
+        description="Firmware version string reported by the board, e.g. '2.1.0'",
+    )
 
     @model_validator(mode="after")
     def _check_shape(self):
@@ -93,6 +97,7 @@ class SensorOut(BaseModel):
     board_type: Optional["BoardTypeOut"] = None
     last_seen_at: Optional[datetime] = None
     battery_changed_at: Optional[datetime] = None
+    firmware_version: Optional[str] = None
     created_at: datetime
 
 

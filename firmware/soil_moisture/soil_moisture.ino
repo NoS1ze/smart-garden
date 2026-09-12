@@ -65,6 +65,11 @@
 
 #include "config.h"
 
+// Reported with every upload and stored per-sensor, so behaviour (battery life,
+// upload cadence, sensor quality) can be compared across builds. Bump on any
+// change that could plausibly affect how the board behaves in the field.
+#define FIRMWARE_VERSION "2.1.0"
+
 // Pin definitions
 #define SENSOR_POWER_PIN D1    // soil moisture power control
 #define SENSOR_ANALOG_PIN A0   // soil moisture analog signal
@@ -86,11 +91,18 @@ struct Reading {
   float light_lux;
 };
 
+// Exponential backoff after a failed upload. Without this a WiFi or backend
+// outage turns into a full connect attempt every single wake (24/day), which
+// burns far more radio time than the once-a-day upload it replaced.
+#define MAX_BACKOFF_WAKES 12
+
 // Lives in RTC user memory (survives deep sleep, lost on power loss/brownout).
 struct RTCData {
   uint32_t crc32;
   uint8_t count;
-  uint8_t _pad[3];
+  uint8_t failures;    // consecutive failed uploads
+  uint8_t skipWakes;   // wakes still to skip before retrying
+  uint8_t _pad;
   Reading readings[READINGS_PER_BATCH];
 };
 
@@ -124,25 +136,60 @@ void saveRTC() {
   ESP.rtcUserMemoryWrite(0, (uint32_t *)&rtcData, sizeof(rtcData));
 }
 
+// Called after a failed upload: back off exponentially instead of retrying
+// every wake, and eventually drop the batch so a stuck buffer doesn't block
+// new readings forever.
+void registerFailure() {
+  if (rtcData.failures < 255) rtcData.failures++;
+  if (rtcData.failures >= 4) {
+    Serial.println("Too many failed uploads — dropping buffered batch");
+    rtcData.count = 0;
+    rtcData.failures = 0;
+    rtcData.skipWakes = 0;
+    return;
+  }
+  uint16_t wakes = 1 << rtcData.failures;  // 2, 4, 8 wakes
+  rtcData.skipWakes = wakes > MAX_BACKOFF_WAKES ? MAX_BACKOFF_WAKES : (uint8_t)wakes;
+  Serial.printf("Upload failed (attempt %d) — backing off %d wake(s)\n",
+                rtcData.failures, rtcData.skipWakes);
+}
+
 void goToSleep() {
-  Serial.printf("Sleeping for %d seconds...\n", SLEEP_SECONDS);
+  // The ESP8266 powers its radio up on every wake by default, even when the
+  // sketch never touches WiFi. Only the wake that actually uploads needs it,
+  // so sleep with RF_DISABLED otherwise — this also skips the RF calibration
+  // burst at boot and shortens the wake considerably.
+  bool rfNextWake = (rtcData.count >= READINGS_PER_BATCH - 1) && (rtcData.skipWakes <= 1);
+
+  Serial.printf("Sleeping for %d seconds (radio %s next wake)...\n",
+                SLEEP_SECONDS, rfNextWake ? "on" : "off");
   Serial.flush();
-  ESP.deepSleep((uint64_t)SLEEP_SECONDS * 1000000ULL);
+  ESP.deepSleep((uint64_t)SLEEP_SECONDS * 1000000ULL,
+                rfNextWake ? RF_DEFAULT : RF_DISABLED);
 }
 
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("Smart Garden - NodeMCU + HTU21D + BH1750");
+  Serial.println("Smart Garden - NodeMCU + HTU21D + BH1750  fw " FIRMWARE_VERSION);
   Serial.println("=========================================");
 
   // --- Restore buffered readings from RTC memory ---
   ESP.rtcUserMemoryRead(0, (uint32_t *)&rtcData, sizeof(rtcData));
   uint32_t crcOfData = calculateCRC32(((uint8_t *)&rtcData) + 4, sizeof(rtcData) - 4);
-  if (crcOfData != rtcData.crc32 || rtcData.count > READINGS_PER_BATCH) {
-    Serial.println("RTC memory invalid (cold boot / brownout) — starting new batch");
+  // Invalid RTC memory means power was lost (battery swap, reflash, brownout).
+  // Upload immediately in that case rather than buffering for 24h first —
+  // otherwise a board you just reconnected looks dead for a full day.
+  bool coldBoot = (crcOfData != rtcData.crc32 || rtcData.count > READINGS_PER_BATCH);
+  if (coldBoot) {
+    Serial.println("Cold boot — uploading immediately to confirm the board is alive");
     memset(&rtcData, 0, sizeof(rtcData));
   }
+
+  if (rtcData.skipWakes > 0) rtcData.skipWakes--;  // serving out a backoff
+
+  bool willSend = (coldBoot || rtcData.count >= READINGS_PER_BATCH - 1)
+                  && rtcData.skipWakes == 0;
 
   // Power on soil sensor early so its 100ms warm-up overlaps with sensor init
   pinMode(SENSOR_POWER_PIN, OUTPUT);
@@ -189,14 +236,15 @@ void setup() {
   }
   Serial.printf("Buffered %d/%d readings\n", rtcData.count, (unsigned)READINGS_PER_BATCH);
 
-  if (rtcData.count < READINGS_PER_BATCH) {
-    // Buffer not full yet — skip WiFi entirely, this is the power saving step
+  if (!willSend) {
+    // Still buffering (or serving out a backoff) — skip WiFi entirely,
+    // this is the power saving step
     saveRTC();
     goToSleep();
     return;
   }
 
-  // --- Buffer is full: connect WiFi and flush the whole batch ---
+  // --- Time to upload: connect WiFi and flush the whole batch ---
   WiFi.persistent(false);
   WiFi.setAutoReconnect(false);
   WiFi.mode(WIFI_STA);
@@ -207,9 +255,10 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - wifiStart > WIFI_TIMEOUT_MS) {
       Serial.println();
-      Serial.println("WiFi timeout — keeping buffer, will retry next wake");
+      Serial.println("WiFi timeout — keeping buffer");
       WiFi.mode(WIFI_OFF);
-      saveRTC();  // count stays at READINGS_PER_BATCH, so next wake retries immediately
+      registerFailure();
+      saveRTC();
       goToSleep();
       return;
     }
@@ -233,6 +282,7 @@ void setup() {
   doc["mac"] = macAddress;
   doc["adc_bits"] = 10;
   doc["board_type"] = "nodemcu_htu21d_bh1750";
+  doc["fw_version"] = FIRMWARE_VERSION;
   doc["raw_dry"] = RAW_DRY;
   doc["raw_wet"] = RAW_WET;
 
@@ -292,10 +342,15 @@ void setup() {
 
   http.end();
 
-  // Clear the buffer whether or not the POST succeeded — retrying a full
-  // batch every wake would grow past READINGS_PER_BATCH slots. Worst case on
-  // a failed send is losing one day of history, same as before batching.
-  memset(&rtcData, 0, sizeof(rtcData));
+  if (httpCode >= 200 && httpCode < 300) {
+    rtcData.count = 0;
+    rtcData.failures = 0;
+    rtcData.skipWakes = 0;
+  } else {
+    // Keep the buffer and retry later with backoff; registerFailure() drops
+    // the batch once retries are clearly not going to succeed.
+    registerFailure();
+  }
   saveRTC();
 
   // --- Sleep ---

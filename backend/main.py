@@ -139,14 +139,16 @@ async def create_readings(request: Request, body: ReadingsCreate):
     # Look up sensor by MAC address
     result = (
         supabase.table("sensors")
-        .select("id")
+        .select("id, firmware_version")
         .eq("mac_address", body.mac)
         .limit(1)
         .execute()
     )
 
+    prev_fw_version = None
     if result.data:
         sensor_id = result.data[0]["id"]
+        prev_fw_version = result.data[0].get("firmware_version")
     else:
         # Auto-register unknown MAC
         insert_data = {"mac_address": body.mac, "name": body.mac, "location": ""}
@@ -169,6 +171,16 @@ async def create_readings(request: Request, body: ReadingsCreate):
         sensor_updates["raw_dry"] = body.raw_dry
     if body.raw_wet is not None:
         sensor_updates["raw_wet"] = body.raw_wet
+
+    # Record firmware version, and log the changeover so a range of readings can
+    # later be attributed to the build that produced them
+    if body.fw_version and body.fw_version != prev_fw_version:
+        sensor_updates["firmware_version"] = body.fw_version
+        supabase.table("firmware_history").insert({
+            "sensor_id": sensor_id,
+            "version": body.fw_version,
+            "previous_version": prev_fw_version,
+        }).execute()
 
     # Link sensor to board type if slug provided
     if body.board_type:

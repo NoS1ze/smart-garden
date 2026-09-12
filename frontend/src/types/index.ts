@@ -33,6 +33,7 @@ export interface Sensor {
   board_type: BoardType | null;
   last_seen_at: string | null;
   battery_changed_at: string | null;
+  firmware_version: string | null;
   created_at: string;
 }
 
