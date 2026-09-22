@@ -1052,9 +1052,27 @@ h1, h2, h3 {
   50% { opacity: 0.5; transform: scale(0.8); }
 }
 
+/* Entrance animation only — the resting state is visible. `backwards` applies
+   the from-keyframe during the stagger delay, then hands back to the element's
+   own (visible) style. Never park the base rule at opacity:0: if the animation
+   is delayed, blocked, or disabled for reduced motion, the content would stay
+   invisible forever and the dashboard would render blank. */
 .animate-in {
-  animation: fadeUp 0.4s ease forwards;
-  opacity: 0;
+  animation: fadeUp 0.4s ease backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---- MetricChart ---- */

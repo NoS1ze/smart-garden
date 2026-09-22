@@ -108,22 +108,32 @@ function computeWaterState(moisture: number | undefined, species: PlantSpecies |
   return 'green';
 }
 
+// Finds the most severe non-water risk. Severity matters: 'critical' means the
+// value has left the species' survivable range and genuinely needs attention;
+// 'acceptable' merely means it sits outside the *optimal* band but is still
+// safe — extremely common indoors, so it must never raise a red alarm or it
+// fires permanently on every card and drowns out the watering signal.
 function computeOtherRisk(
   values: Record<string, number>,
   species: PlantSpecies | null,
-): { metric: string; dir: string } | null {
+): { metric: string; dir: string; status: 'critical' | 'acceptable' } | null {
   if (!species) return null;
+  let soft: { metric: string; dir: string; status: 'acceptable' } | null = null;
+
   for (const key of ['temperature', 'light_lux']) {
     if (values[key] === undefined) continue;
     const { status } = getMetricStatus(values[key], species, key);
-    if (status === 'critical' || status === 'acceptable') {
-      const r = getMetricRanges(species, key);
-      const isHigh = r.optMax != null ? values[key] > r.optMax : false;
-      const label = key === 'temperature' ? 'TEMP' : 'LIGHT';
-      return { metric: label, dir: isHigh ? 'HIGH' : 'LOW' };
-    }
+    if (status !== 'critical' && status !== 'acceptable') continue;
+
+    const r = getMetricRanges(species, key);
+    const isHigh = r.optMax != null ? values[key] > r.optMax : false;
+    const label = key === 'temperature' ? 'TEMP' : 'LIGHT';
+    const risk = { metric: label, dir: isHigh ? 'HIGH' : 'LOW' };
+
+    if (status === 'critical') return { ...risk, status };  // outranks everything
+    if (!soft) soft = { ...risk, status };                  // remember, keep looking
   }
-  return null;
+  return soft;
 }
 
 function computeStreakDays(
@@ -245,6 +255,7 @@ export function PlantCard({ plant, onClick }: Props) {
   const [needsAttention,  setNeedsAttention]  = useState(false);
   const [wateringOverdue, setWateringOverdue] = useState(false);
   const [healthIndicator, setHealthIndicator] = useState<HealthIndicator | null>(null);
+  const [softRisk, setSoftRisk] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -288,9 +299,16 @@ export function PlantCard({ plant, onClick }: Props) {
         setLatestValues(values);
         setLastReadingTime(latestTime);
 
-        // Compute health indicator
+        // Compute health indicator. Only a genuinely critical reading takes over
+        // the dial; anything merely outside the optimal band is a quiet marker,
+        // so the watering state stays readable — it's the actionable one.
         const otherRisk = computeOtherRisk(values, plant.plant_species ?? null);
-        if (otherRisk) {
+        setSoftRisk(
+          otherRisk && otherRisk.status === 'acceptable'
+            ? `${otherRisk.metric} ${otherRisk.dir}`
+            : null,
+        );
+        if (otherRisk && otherRisk.status === 'critical') {
           setHealthIndicator({
             color: '#ef4444',
             line1: otherRisk.metric,
@@ -472,6 +490,17 @@ export function PlantCard({ plant, onClick }: Props) {
           {/* Alert dots */}
           {needsAttention && <circle cx={CX + 22} cy={68} r={4} fill="#ef4444" />}
           {wateringOverdue && <circle cx={CX - 22} cy={68} r={4} fill="#14b8a6" />}
+
+          {/* Outside the optimal band but still safe — a quiet note, not an alarm */}
+          {softRisk && (
+            <text x="190" y="31"
+              textAnchor="end"
+              fontFamily="DM Sans, sans-serif" fontSize="8" fontWeight="600"
+              letterSpacing="0.05em" fill="#f59e0b" opacity="0.8">
+              <title>{softRisk} — outside the ideal range, still within safe limits</title>
+              {softRisk}
+            </text>
+          )}
 
           {/* Health indicator text — rendered on top of rings */}
           {healthIndicator && (
