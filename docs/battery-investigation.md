@@ -63,6 +63,62 @@ already depleted and degraded, which alone accounts for 7 days.
 - **No conclusion is possible without a multimeter.** All further log archaeology
   is inference around one unmeasured number.
 
+## Measurement log
+
+### 2026-09-22 20:18 BST (19:18 UTC)
+
+**Cell voltage: 4.052 V** — measured with a multimeter in DC volts mode.
+(An 18650 reads 4.2 V full, ~3.7 V nominal, ~3.0 V empty, so this is a healthy,
+essentially freshly-charged cell.) *To confirm: which board this cell belongs to —
+recorded from the session where the NodeMCU was being reconnected.*
+
+**Deep-sleep current: still not measured.** The attempt failed on the meter, not
+on the board:
+- On the **µA range** the board would not start at all (LED dead). Expected — the
+  µA shunt is ~100 Ω–1 kΩ and an ESP boot draws 80–300 mA, so the burden voltage
+  collapses the supply and the board browns out before it can boot.
+- On the **mA range** the meter showed nothing either, which points at a **blown
+  meter fuse** (µA/mA share a fuse, typically 200–500 mA — an ESP32 inrush kills it).
+
+Next attempt should avoid the meter's current path entirely: put a **10 Ω resistor
+in series with the cell** and measure the **voltage drop across it in DC volts mode**
+(10 MΩ input, no fuse, no burden problem), then I = U / R. At 10 Ω: 110 mV = 11 mA
+(hardware mod needed), 2 mV = 0.2 mA (firmware is fine, the old cells were the story).
+
+**Observation worth following up:** the LED on the board flashes once at startup and
+then goes out. If nothing stays lit during sleep, the "power LED draws 2–5 mA
+continuously" hypothesis may not hold for this board — check whether there is a
+separate always-on power LED, because that changes which hardware mod is worth doing.
+
+### Server status at the same moment (2026-09-22 19:18 UTC)
+
+| Board | MAC | fw | Last seen (UTC) | Ago |
+|---|---|---|---|---|
+| Ms Green (NodeMCU + HTU21D/BH1750) | 8C:CE:4E:CE:66:15 | **2.1.0** | 2026-09-22 19:16 | **2 min** |
+| DIY MORE 08:B6 | 08:B6:1F:8E:C7:E0 | — | 2026-09-21 20:41 | 0.9 d |
+| DIY MORE (#2) | 34:98:7A:BC:3B:AC | — | 2026-09-21 20:41 | 0.9 d |
+| DIY MORE 7c:E9 | 7C:9E:BD:F2:5F:54 | — | 2026-09-21 20:37 | 0.9 d |
+| DIY MORE 10:06 | 10:06:1C:B5:80:18 | — | 2026-09-21 20:31 | 0.9 d |
+| BC:3B:BC | 34:98:7A:BC:3B:BC | — | 2026-03-31 | 175 d |
+| ENS160 | 18:FE:34:FB:CF:70 | — | 2026-03-06 | 200 d |
+
+Three things this confirms:
+
+1. **Ms Green is back after 5 months dark** (previous last-seen was 2026-04-17) and is
+   the first board running **2.1.0**. Version reporting works end to end in the field —
+   `sensors.firmware_version` populated from the payload.
+2. **Cold-boot immediate upload works.** It sent a *single* reading set at 19:16:17, not
+   a 24-entry batch — i.e. it uploaded on its first wake after power-on instead of
+   buffering for 24 h. That is the 2.1.0 feature doing exactly its job: the board
+   confirmed itself within seconds of being connected.
+3. **The HTU21D is healthy again** — temperature 27.4 °C *and* humidity 43.6 % both
+   valid, where the original investigation had humidity stuck at 999 (CRC failure).
+   Light 30.8 lux, soil raw 642.
+
+The four DIY MORE boards also came back (they were dark from 2026-09-10) and are
+uploading on a ~24 h cadence, still on the old firmware — `fw` is null because 2.0.0
+does not report a version. Their next upload is due ~20:31–20:41 UTC.
+
 ### Outstanding: the measurement that settles it
 
 Multimeter in series with the cell, board in deep sleep, **USB disconnected**
