@@ -146,6 +146,7 @@ function AppContent() {
               }}
             >
               {item.icon}
+              <span className="nav-label">{item.title}</span>
             </button>
           ))}
         </div>

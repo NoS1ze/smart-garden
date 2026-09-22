@@ -131,7 +131,15 @@ function computeOtherRisk(
     const risk = { metric: label, dir: isHigh ? 'HIGH' : 'LOW' };
 
     if (status === 'critical') return { ...risk, status };  // outranks everything
-    if (!soft) soft = { ...risk, status };                  // remember, keep looking
+
+    // Merely leaving the optimal band is too common to be worth flagging — it
+    // fires on every card at once and stops meaning anything. Only surface it
+    // once the value has travelled most of the way to the survivable limit,
+    // so the note reads as "approaching the edge", which is actionable.
+    const edge = isHigh
+      ? (r.max != null && r.optMax != null ? (values[key] - r.optMax) / (r.max - r.optMax) : 0)
+      : (r.min != null && r.optMin != null ? (r.optMin - values[key]) / (r.optMin - r.min) : 0);
+    if (!soft && Number.isFinite(edge) && edge >= 0.6) soft = { ...risk, status };
   }
   return soft;
 }
@@ -208,7 +216,7 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, st
           fill="none"
           stroke={hexColor}
           strokeWidth={stroke}
-          strokeOpacity={0.28}
+          strokeOpacity={0.22}
           strokeLinecap="butt"
           strokeDasharray={`${len} ${circumference}`}
           transform={`rotate(${startA} ${CX} ${CY})`}
@@ -224,7 +232,7 @@ function ArcRing({ value, defMin, defMax, specMin, specMax, hexColor, radius, st
         fill="none"
         stroke={hexColor}
         strokeWidth={stroke}
-        strokeOpacity={0.13}
+        strokeOpacity={0.08}
         strokeDasharray={`${sweepLen} ${circumference}`}
         strokeLinecap="round"
         transform={`rotate(${START_ANGLE} ${CX} ${CY})`}
@@ -388,13 +396,47 @@ export function PlantCard({ plant, onClick }: Props) {
   const hasAnyData = availRingMetrics.length > 0 || extraMetrics.length > 0;
   const clipId     = `clip-${plant.id.replace(/-/g, '')}`;
 
+  // Spoken equivalent of the coloured centre readout
+  const waterSummary = (() => {
+    if (!healthIndicator) return null;
+    const days = healthIndicator.line1;
+    switch (healthIndicator.cardClass) {
+      case 'health-blue':   return `overwatered for ${days} day${days === '1' ? '' : 's'}`;
+      case 'health-orange': return `dry and needs water${days === '0' ? '' : ` for ${days} days`}`;
+      case 'health-green':  return `well watered for ${days} day${days === '1' ? '' : 's'}`;
+      default:              return null;
+    }
+  })();
+
   const cardClasses = ['plant-circle-card',
     needsAttention && 'attention',
     healthIndicator?.cardClass || null,
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={cardClasses} onClick={onClick}>
+    <div
+      className={cardClasses}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      /* Everything visual lives in an aria-hidden SVG, so without this a
+         screen reader reads a nameless clickable box. Spell out the state the
+         dial conveys: which plant, how it's doing, and how fresh the data is. */
+      aria-label={[
+        plant.name,
+        healthIndicator?.line2
+          ? `${healthIndicator.line1} ${healthIndicator.line2}`
+          : waterSummary,
+        softRisk ? `${softRisk}, still within safe limits` : null,
+        lastReadingTime ? `last reading ${timeAgo(lastReadingTime).text}` : 'no readings yet',
+      ].filter(Boolean).join('. ')}
+    >
       <div className="arc-rings-container">
         {/* viewBox 200×140: photo background, arch at CY=135, health indicator in center */}
         <svg viewBox="0 0 200 140" width="100%" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -478,7 +520,11 @@ export function PlantCard({ plant, onClick }: Props) {
               <ArcRing key={key}
                 value={latestValues[key]}
                 defMin={def[0]} defMax={def[1]}
-                specMin={ranges.min} specMax={ranges.max}
+                /* The band marks the OPTIMAL zone, not the survivable one —
+                   survivable spans nearly the whole dial for most metrics, so
+                   it read as a meaningless block. This makes the ring answer
+                   "am I in the sweet spot?" at a glance. */
+                specMin={ranges.optMin} specMax={ranges.optMax}
                 hexColor={METRIC_HEX[key]}
                 radius={radii[i]}
                 stroke={ringStroke}

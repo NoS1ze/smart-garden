@@ -178,11 +178,11 @@ h1, h2, h3 {
 }
 
 .topnav-icon-btn {
-  width: 40px;
-  height: 40px;
+  height: 34px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -190,6 +190,29 @@ h1, h2, h3 {
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
+  font-family: inherit;
+}
+
+/* Icon-only navigation forces people to decode six near-identical glyphs.
+   The label is the affordance; the icon is the accent. */
+.nav-label {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+}
+
+/* Below tablet the labels would wrap the bar — fall back to icons, which
+   still carry their title attribute. */
+@media (max-width: 760px) {
+  .nav-label {
+    display: none;
+  }
+  .topnav-icon-btn {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
 }
 
 .topnav-icon-btn:hover {
@@ -199,17 +222,16 @@ h1, h2, h3 {
 
 .topnav-icon-btn.active {
   color: var(--text-primary);
+  background: var(--green-glow);
 }
 
-.topnav-icon-btn.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 25%;
-  width: 50%;
-  height: 2px;
-  background: var(--green-vivid);
-  border-radius: 2px 2px 0 0;
+.topnav-icon-btn.active .nav-icon {
+  color: var(--green-vivid);
+}
+
+.topnav-icon-btn:focus-visible {
+  outline: 2px solid var(--green-vivid);
+  outline-offset: 2px;
 }
 
 .theme-toggle {
@@ -256,11 +278,13 @@ h1, h2, h3 {
 }
 
 /* ---- Plant Grid ---- */
+/* auto-fit + 1fr lets the cards claim the whole row instead of capping at
+   240px and leaving a ragged gap on the right. The arc dial is the signature
+   element here, so giving it the extra width materially improves legibility. */
 .plant-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 240px));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 20px;
-  justify-content: start;
 }
 
 /* ---- Plant Card ---- */
@@ -521,6 +545,11 @@ h1, h2, h3 {
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
   position: relative;
   overflow: hidden;
+}
+
+.plant-circle-card:focus-visible {
+  outline: 2px solid var(--green-vivid);
+  outline-offset: 3px;
 }
 
 .plant-circle-card:hover {
