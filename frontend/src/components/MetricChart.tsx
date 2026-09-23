@@ -60,11 +60,20 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
       from = new Date(customFrom).toISOString();
       to = new Date(customTo + 'T23:59:59').toISOString();
     } else if (range === '24h') {
-      const dayStart = new Date();
-      dayStart.setHours(0, 0, 0, 0);
-      dayStart.setDate(dayStart.getDate() + dayOffset);
-      from = dayStart.toISOString();
-      if (dayOffset < 0) {
+      if (dayOffset === 0) {
+        // A genuine rolling 24 hours, as the button says. "Since midnight"
+        // leaves this empty for most of the day now that boards upload once
+        // daily and back-date their readings across the previous 24h — just
+        // after midnight the window was minutes wide while real data sat
+        // hours old and invisible.
+        from = new Date(Date.now() - 86400000).toISOString();
+      } else {
+        // Navigating back stays on calendar days, so ‹ › and the date label
+        // keep meaning what they say.
+        const dayStart = new Date();
+        dayStart.setHours(0, 0, 0, 0);
+        dayStart.setDate(dayStart.getDate() + dayOffset);
+        from = dayStart.toISOString();
         const dayEnd = new Date(dayStart);
         dayEnd.setHours(23, 59, 59, 999);
         to = dayEnd.toISOString();
@@ -226,13 +235,30 @@ export function MetricChart({ sensorId, soilType, plantSpecies, adcBits = 10, pl
     const lo = Math.min(...allBounds);
     const hi = Math.max(...allBounds);
     const padding = (hi - lo) * 0.08 || 1;
-    return [Math.floor(lo - padding), Math.ceil(hi + padding)];
+
+    // Padding must not push the axis past what the metric can physically be —
+    // a soil moisture or humidity axis running to -3% invites the reader to
+    // assume readings could go there. Temperature is deliberately unbounded.
+    const FLOOR: Record<string, number> = {
+      soil_moisture: 0, humidity: 0, light_lux: 0, co2_ppm: 0, tvoc_ppb: 0,
+    };
+    const CEILING: Record<string, number> = { soil_moisture: 100, humidity: 100 };
+
+    const floor = FLOOR[metric];
+    const ceiling = CEILING[metric];
+    const paddedLo = Math.floor(lo - padding);
+    const paddedHi = Math.ceil(hi + padding);
+
+    return [
+      floor != null ? Math.max(floor, paddedLo) : paddedLo,
+      ceiling != null ? Math.min(ceiling, paddedHi) : paddedHi,
+    ];
   };
 
   const yDomain = computeYDomain();
 
   const getDayLabel = () => {
-    if (dayOffset === 0) return 'Today';
+    if (dayOffset === 0) return 'Last 24h';
     if (dayOffset === -1) return 'Yesterday';
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);

@@ -177,7 +177,11 @@ async def check_alerts(sensor_id: str, readings: list[dict]) -> int:
             supabase.table("alert_history").insert({
                 "alert_id": rule["id"],
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
-                "value_at_trigger": value,
+                # Store the value that was actually compared against the
+                # threshold, not the raw reading. For soil_moisture those differ
+                # (raw ADC vs converted %), so recording the raw value made the
+                # history read as nonsense: "below 30" logged against 642.
+                "value_at_trigger": round(compare_value, 2),
             }).execute()
 
             triggered += 1

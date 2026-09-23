@@ -67,10 +67,18 @@ already depleted and degraded, which alone accounts for 7 days.
 
 ### 2026-09-22 20:18 BST (19:18 UTC)
 
-**Cell voltage: 4.052 V** — measured with a multimeter in DC volts mode.
-(An 18650 reads 4.2 V full, ~3.7 V nominal, ~3.0 V empty, so this is a healthy,
-essentially freshly-charged cell.) *To confirm: which board this cell belongs to —
-recorded from the session where the NodeMCU was being reconnected.*
+**Cell voltage: 4.052 V — NodeMCU node (Ms Green, 8C:CE:4E:CE:66:15).**
+Measured with a multimeter in DC volts mode. An 18650 reads 4.2 V full, ~3.7 V
+nominal, ~3.0 V empty, so this is a healthy, essentially freshly-charged cell.
+
+This is a useful baseline rather than a loose datum: it is the **starting
+voltage for the NodeMCU's run on firmware 2.1.0**, on the one board in the
+fleet that already has the MCP1700 (1.6 µA) regulator rather than an AMS1117.
+That combination — good regulator, gated soil sensor, daily batching, radio off
+on non-upload wakes — is the architecture `hardware-design.md` proposes for
+everything else. So this node is now the live experiment: track how long it
+takes to fall from 4.052 V, and it answers whether the design thesis holds
+without waiting on a PCB spin.
 
 **Deep-sleep current: still not measured.** The attempt failed on the meter, not
 on the board:
